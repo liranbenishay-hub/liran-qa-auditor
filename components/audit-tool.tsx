@@ -81,6 +81,15 @@ interface ConfidenceScore {
   reason: string;
 }
 
+/** A heuristic page region expressed as % of the 1280×800 screenshot dimensions */
+interface AnnotationRegion {
+  x: number;      // 0–100 % of screenshot width
+  y: number;      // 0–100 % of screenshot height
+  width: number;  // 0–100 % of screenshot width
+  height: number; // 0–100 % of screenshot height
+  label: string;  // Short label shown on the overlay chip
+}
+
 const TOOL_LABELS: Record<ToolId, string> = {
   lovable: "Lovable",
   base44: "Base44",
@@ -1049,6 +1058,108 @@ function calculateConfidence(
   return { score, level, signals: sigs, reason };
 }
 
+// ── Annotation region mapper ──────────────────────────────────────────────────
+//
+// Maps a finding to 1–3 heuristic page regions (% of 1280×800 screenshot).
+// No computer vision — purely based on category + issue keyword heuristics.
+
+function getAnnotationRegions(finding: AuditFinding, _apiData: APIAuditData | null): AnnotationRegion[] {
+  const { category, issue } = finding;
+  const kw = issue.toLowerCase();
+
+  // Named region presets
+  const R = {
+    header:    { x: 0,  y: 0,  width: 100, height: 10  },  // top nav bar
+    hero:      { x: 0,  y: 0,  width: 100, height: 42  },  // hero / top section
+    aboveFold: { x: 0,  y: 0,  width: 100, height: 65  },  // full above-fold
+    ctaZone:   { x: 15, y: 18, width: 70,  height: 32  },  // typical CTA area
+    formZone:  { x: 10, y: 25, width: 80,  height: 42  },  // form / input area
+    trustZone: { x: 0,  y: 55, width: 100, height: 28  },  // social proof / logos
+    footer:    { x: 0,  y: 76, width: 100, height: 24  },  // footer
+    fullPage:  { x: 0,  y: 0,  width: 100, height: 100 },  // whole page
+  };
+
+  switch (category) {
+    case "Product Clarity": {
+      if (kw.includes("h1") || kw.includes("headline") || kw.includes("value statement") || kw.includes("hero"))
+        return [{ ...R.hero, label: "Hero — missing value statement" }];
+      if (kw.includes("title") || kw.includes("product name"))
+        return [{ ...R.hero, label: "Hero — missing product title" }];
+      if (kw.includes("description") || kw.includes("meta"))
+        return [{ ...R.hero, label: "Hero — missing description" }];
+      if (kw.includes("word") || kw.includes("content") || kw.includes("story"))
+        return [{ ...R.hero, label: "Hero" }, { ...R.trustZone, label: "Body content" }];
+      return [{ ...R.hero, label: "Hero / above-fold" }];
+    }
+
+    case "User Journey": {
+      if (kw.includes("navigation") || kw.includes("nav") || kw.includes("menu") || kw.includes("link"))
+        return [{ ...R.header, label: "Navigation bar" }];
+      if (kw.includes("cta") || kw.includes("action") || kw.includes("next step"))
+        return [{ ...R.header, label: "Navigation" }, { ...R.ctaZone, label: "Primary CTA" }];
+      return [{ ...R.header, label: "Navigation" }, { ...R.ctaZone, label: "Conversion path" }];
+    }
+
+    case "Conversion": {
+      if (kw.includes("cta") || kw.includes("button") || kw.includes("action") || kw.includes("call to action"))
+        return [{ ...R.ctaZone, label: "Primary CTA zone" }];
+      if (kw.includes("form") || kw.includes("signup") || kw.includes("sign up"))
+        return [{ ...R.formZone, label: "Signup / conversion form" }];
+      if (kw.includes("pric"))
+        return [{ ...R.ctaZone, label: "Pricing & CTA area" }];
+      return [{ ...R.ctaZone, label: "Above-fold CTA zone" }];
+    }
+
+    case "UX Friction": {
+      if (kw.includes("form") || kw.includes("field") || kw.includes("input") || kw.includes("step"))
+        return [{ ...R.formZone, label: "Form — friction point" }];
+      if (kw.includes("nav") || kw.includes("link") || kw.includes("menu"))
+        return [{ ...R.header, label: "Navigation friction" }];
+      return [{ ...R.ctaZone, label: "Primary interaction zone" }];
+    }
+
+    case "Trust Signals": {
+      if (kw.includes("contact") || kw.includes("team") || kw.includes("about"))
+        return [{ ...R.footer, label: "Contact / team area" }];
+      if (kw.includes("review") || kw.includes("testimonial") || kw.includes("social proof"))
+        return [{ ...R.trustZone, label: "Social proof zone" }];
+      return [
+        { ...R.trustZone, label: "Trust signals area" },
+        { ...R.footer, label: "Footer / contact" },
+      ];
+    }
+
+    case "Accessibility": {
+      if (kw.includes("alt") || kw.includes("image") || kw.includes("img"))
+        return [{ ...R.hero, label: "Hero images — missing alt text" }];
+      if (kw.includes("contrast") || kw.includes("color"))
+        return [{ ...R.aboveFold, label: "Above-fold — contrast issue" }];
+      if (kw.includes("label") || kw.includes("input") || kw.includes("form"))
+        return [{ ...R.formZone, label: "Form — missing labels" }];
+      return [{ ...R.aboveFold, label: "Above-fold content" }];
+    }
+
+    case "Mobile Experience": {
+      if (kw.includes("viewport") || kw.includes("meta"))
+        return [{ ...R.hero, label: "Mobile viewport area" }];
+      if (kw.includes("touch") || kw.includes("tap") || kw.includes("button"))
+        return [{ ...R.ctaZone, label: "Touch targets" }];
+      return [{ ...R.aboveFold, label: "Mobile above-fold" }];
+    }
+
+    case "Performance Perception": {
+      if (kw.includes("script") || kw.includes("javascript") || kw.includes("js"))
+        return [{ ...R.hero, label: "Initial render (JS blocking)" }];
+      if (kw.includes("image") || kw.includes("img") || kw.includes("lcp"))
+        return [{ ...R.hero, label: "Hero image (LCP zone)" }];
+      return [{ ...R.hero, label: "Initial render area" }];
+    }
+
+    default:
+      return [{ ...R.hero, label: "Page area" }];
+  }
+}
+
 // ── URL analysis ──────────────────────────────────────────────────────────────
 
 function detectBuilder(url: string): string | null {
@@ -1888,6 +1999,9 @@ export default function AuditTool() {
     durationMs: number;
   } | null>(null);
   const [screenshotModalOpen, setScreenshotModalOpen] = useState(false);
+  // When the modal is opened from an evidence drawer, we track the finding
+  // so we can render the matching annotation overlay inside the full screenshot.
+  const [screenshotModalFinding, setScreenshotModalFinding] = useState<AuditFinding | null>(null);
 
   const resultRef = useRef<HTMLDivElement>(null);
 
@@ -1900,7 +2014,10 @@ export default function AuditTool() {
   // Esc closes screenshot modal
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setScreenshotModalOpen(false);
+      if (e.key === "Escape") {
+        setScreenshotModalOpen(false);
+        setScreenshotModalFinding(null);
+      }
     }
     if (screenshotModalOpen) window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -2415,7 +2532,7 @@ export default function AuditTool() {
                 {/* Clickable screenshot */}
                 <div
                   className="group relative mx-3 cursor-zoom-in overflow-hidden rounded-md border border-zinc-800"
-                  onClick={() => setScreenshotModalOpen(true)}
+                  onClick={() => { setScreenshotModalFinding(null); setScreenshotModalOpen(true); }}
                   title="Click to enlarge"
                 >
                   <img
@@ -2851,7 +2968,7 @@ export default function AuditTool() {
         {screenshotModalOpen && screenshotBase64 && (
           <div
             className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4"
-            onClick={() => setScreenshotModalOpen(false)}
+            onClick={() => { setScreenshotModalOpen(false); setScreenshotModalFinding(null); }}
           >
             <div
               className="relative max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-xl shadow-2xl"
@@ -2865,8 +2982,13 @@ export default function AuditTool() {
                 <span className="ml-2 flex-1 rounded bg-zinc-800 px-3 py-0.5 font-mono text-[9px] text-zinc-400 truncate">
                   {url}
                 </span>
+                {screenshotModalFinding && (
+                  <span className="ml-2 rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 font-mono text-[9px] text-zinc-400 truncate max-w-[200px]">
+                    ↑ annotated: {screenshotModalFinding.category}
+                  </span>
+                )}
                 <button
-                  onClick={() => setScreenshotModalOpen(false)}
+                  onClick={() => { setScreenshotModalOpen(false); setScreenshotModalFinding(null); }}
                   className="ml-2 flex h-6 w-6 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
                   aria-label="Close"
                 >
@@ -2876,26 +2998,35 @@ export default function AuditTool() {
                 </button>
               </div>
 
-              {/* Full screenshot */}
-              <div className="overflow-auto bg-zinc-950" style={{ maxHeight: "calc(90vh - 80px)" }}>
+              {/* Full screenshot — with optional annotation overlay */}
+              <div className="relative overflow-auto bg-zinc-950" style={{ maxHeight: "calc(90vh - 80px)" }}>
                 <img
                   src={`data:image/jpeg;base64,${screenshotBase64}`}
                   alt={`Full screenshot of ${result.domain}`}
                   className="w-full"
                 />
+                {/* Annotation overlay when opened from evidence drawer */}
+                {screenshotModalFinding && (
+                  <AnnotationOverlay
+                    finding={screenshotModalFinding}
+                    apiData={apiData}
+                  />
+                )}
               </div>
 
               {/* Modal footer */}
-              {screenshotMeta && (
-                <div className="flex items-center gap-4 bg-zinc-950 px-4 py-2 border-t border-zinc-800">
-                  <span className="font-mono text-[9px] text-zinc-500">🖥 {screenshotMeta.viewport} · 1280×800</span>
-                  <span className="font-mono text-[9px] text-zinc-500">
-                    Captured {new Date(screenshotMeta.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                  </span>
-                  <span className="font-mono text-[9px] text-zinc-500">{(screenshotMeta.durationMs / 1000).toFixed(1)}s render</span>
-                  <span className="ml-auto font-mono text-[9px] text-zinc-600">Esc or click outside to close</span>
-                </div>
-              )}
+              <div className="flex items-center gap-4 bg-zinc-950 px-4 py-2 border-t border-zinc-800">
+                {screenshotMeta && (
+                  <>
+                    <span className="font-mono text-[9px] text-zinc-500">🖥 {screenshotMeta.viewport} · 1280×800</span>
+                    <span className="font-mono text-[9px] text-zinc-500">
+                      Captured {new Date(screenshotMeta.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                    </span>
+                    <span className="font-mono text-[9px] text-zinc-500">{(screenshotMeta.durationMs / 1000).toFixed(1)}s render</span>
+                  </>
+                )}
+                <span className="ml-auto font-mono text-[9px] text-zinc-600">Esc or click outside to close</span>
+              </div>
             </div>
           </div>
         )}
@@ -3082,27 +3213,21 @@ export default function AuditTool() {
                       </div>
                     </div>
 
-                    {/* Visual evidence section */}
+                    {/* Visual evidence section — annotated screenshot */}
                     <div>
                       <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
                         Visual evidence
                       </p>
-                      {ev.screenshotUrl ? (
-                        <img
-                          src={ev.screenshotUrl}
-                          alt="Page screenshot"
-                          className="w-full rounded-xl border border-zinc-200 object-cover shadow-sm"
-                        />
-                      ) : (
-                        <div className="flex items-center gap-3 rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-3">
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="shrink-0 text-zinc-300" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="3" y="3" width="18" height="18" rx="2" />
-                            <circle cx="8.5" cy="8.5" r="1.5" />
-                            <polyline points="21 15 16 10 5 21" />
-                          </svg>
-                          <p className="text-xs text-zinc-400">Visual evidence not captured yet. Screenshots will be added in the next release.</p>
-                        </div>
-                      )}
+                      <AnnotatedScreenshot
+                        screenshotBase64={screenshotBase64}
+                        screenshotLoading={screenshotLoading}
+                        finding={evidenceFinding}
+                        apiData={apiData}
+                        onViewFull={() => {
+                          setScreenshotModalFinding(evidenceFinding);
+                          setScreenshotModalOpen(true);
+                        }}
+                      />
                     </div>
 
                     {/* Separator + Fix Prompt CTA */}
@@ -3136,6 +3261,214 @@ export default function AuditTool() {
   }
 
   return null;
+}
+
+// ── Annotation overlay (manages its own hover state) ─────────────────────────
+
+function AnnotationOverlay({
+  finding,
+  apiData,
+  screenshotHeight,
+}: {
+  finding: AuditFinding;
+  apiData: APIAuditData | null;
+  /** Rendered height of the screenshot image in px — used to flip tooltip above/below */
+  screenshotHeight?: number;
+}) {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const regions = getAnnotationRegions(finding, apiData);
+  const conf = calculateConfidence(finding, apiData, !!apiData);
+
+  const PC: Record<Priority, { bg: string; border: string; chip: string; bar: string }> = {
+    urgent:    { bg: "rgba(239,68,68,0.13)",   border: "rgba(239,68,68,0.65)",   chip: "bg-red-100 text-red-700 border-red-300",     bar: "#ef4444" },
+    important: { bg: "rgba(249,115,22,0.13)",  border: "rgba(249,115,22,0.65)",  chip: "bg-orange-100 text-orange-700 border-orange-300", bar: "#f97316" },
+    later:     { bg: "rgba(234,179,8,0.16)",   border: "rgba(234,179,8,0.70)",   chip: "bg-amber-100 text-amber-700 border-amber-300",  bar: "#eab308" },
+  };
+  const pc = PC[finding.priority];
+
+  return (
+    <>
+      {regions.map((r, i) => {
+        const isHovered = hoveredIdx === i;
+        // Flip tooltip above the region when region is in lower half of image
+        const tooltipAbove = r.y > 55;
+        return (
+          <div
+            key={i}
+            style={{
+              position: "absolute",
+              left: `${r.x}%`,
+              top: `${r.y}%`,
+              width: `${r.width}%`,
+              height: `${r.height}%`,
+              background: isHovered ? pc.bg.replace("0.13", "0.22").replace("0.16", "0.26") : pc.bg,
+              border: `2px solid ${pc.border}`,
+              borderRadius: 8,
+              transition: "background 120ms",
+              cursor: "default",
+              zIndex: 10,
+            }}
+            onMouseEnter={() => setHoveredIdx(i)}
+            onMouseLeave={() => setHoveredIdx(null)}
+          >
+            {/* Region label chip — top-left corner */}
+            <div style={{ position: "absolute", top: 5, left: 5 }}>
+              <span
+                className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] font-semibold shadow-sm ${pc.chip}`}
+                style={{ backdropFilter: "blur(4px)", background: "rgba(255,255,255,0.85)" }}
+              >
+                <span
+                  className="inline-block h-1.5 w-1.5 rounded-full shrink-0"
+                  style={{ background: pc.bar }}
+                />
+                {r.label}
+              </span>
+            </div>
+
+            {/* Hover tooltip */}
+            {isHovered && (
+              <div
+                className="absolute left-1/2 z-20 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 shadow-xl"
+                style={{
+                  transform: "translateX(-50%)",
+                  ...(tooltipAbove
+                    ? { bottom: "calc(100% + 8px)" }
+                    : { top: "calc(100% + 8px)" }),
+                  minWidth: 210,
+                  maxWidth: 270,
+                  pointerEvents: "none",
+                }}
+              >
+                <p className="mb-1 text-[11px] font-semibold leading-snug text-zinc-800 line-clamp-2">
+                  {finding.issue}
+                </p>
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <span
+                    className={`rounded border px-1.5 py-px font-mono text-[9px] font-semibold ${pc.chip}`}
+                  >
+                    {finding.priority.toUpperCase()}
+                  </span>
+                  <span className="font-mono text-[9px] text-zinc-500">
+                    {conf.score}% confidence · {conf.level}
+                  </span>
+                </div>
+                <p className="text-[10px] leading-relaxed text-zinc-500 line-clamp-3">
+                  {conf.reason}
+                </p>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+// ── Annotated screenshot (real screenshot or wireframe placeholder) ────────────
+
+// Wireframe section shapes shown when no real screenshot is available
+const WF_SECTIONS = [
+  { y: 0,  h: 10, bg: "#27272a" }, // nav
+  { y: 10, h: 32, bg: "#3f3f46" }, // hero
+  { y: 42, h: 34, bg: "#27272a" }, // content
+  { y: 76, h: 24, bg: "#3f3f46" }, // footer
+];
+
+function AnnotatedScreenshot({
+  screenshotBase64,
+  screenshotLoading,
+  finding,
+  apiData,
+  onViewFull,
+}: {
+  screenshotBase64: string | null;
+  screenshotLoading: boolean;
+  finding: AuditFinding;
+  apiData: APIAuditData | null;
+  onViewFull: () => void;
+}) {
+  if (!screenshotBase64) {
+    // ── Wireframe mode ──────────────────────────────────────────────────────
+    return (
+      <div>
+        <div
+          className="relative overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900"
+          style={{ aspectRatio: "16/10" }}
+        >
+          {/* Wireframe background stripes */}
+          {WF_SECTIONS.map((s, i) => (
+            <div
+              key={i}
+              style={{
+                position: "absolute",
+                left: 0,
+                top: `${s.y}%`,
+                width: "100%",
+                height: `${s.h}%`,
+                background: s.bg,
+              }}
+            />
+          ))}
+          {/* Wireframe content lines */}
+          <div style={{ position: "absolute", top: "14%", left: "20%", width: "60%", height: "2%",   background: "#52525b", borderRadius: 4 }} />
+          <div style={{ position: "absolute", top: "19%", left: "30%", width: "40%", height: "1.5%", background: "#3f3f46", borderRadius: 4 }} />
+          <div style={{ position: "absolute", top: "25%", left: "35%", width: "30%", height: "5%",   background: "#52525b", borderRadius: 6 }} />
+          <div style={{ position: "absolute", top: "49%", left: "8%",  width: "26%", height: "8%",   background: "#3f3f46", borderRadius: 4 }} />
+          <div style={{ position: "absolute", top: "49%", left: "38%", width: "26%", height: "8%",   background: "#3f3f46", borderRadius: 4 }} />
+          <div style={{ position: "absolute", top: "49%", left: "68%", width: "24%", height: "8%",   background: "#3f3f46", borderRadius: 4 }} />
+          <div style={{ position: "absolute", top: "61%", left: "8%",  width: "84%", height: "1.5%", background: "#52525b", borderRadius: 4 }} />
+          <div style={{ position: "absolute", top: "65%", left: "8%",  width: "60%", height: "1.5%", background: "#3f3f46", borderRadius: 4 }} />
+
+          {/* Annotation overlay */}
+          <AnnotationOverlay finding={finding} apiData={apiData} />
+
+          {/* Loading spinner overlay */}
+          {screenshotLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+              <div className="text-center">
+                <div className="mx-auto mb-2 h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
+                <p className="font-mono text-[10px] text-zinc-400">Capturing screenshot…</p>
+              </div>
+            </div>
+          )}
+        </div>
+        <p className="mt-1.5 text-center font-mono text-[9px] text-zinc-500">
+          {screenshotLoading
+            ? "Screenshot capturing in background — annotation based on page structure"
+            : "Wireframe layout · annotations show heuristic issue location"}
+        </p>
+      </div>
+    );
+  }
+
+  // ── Real screenshot mode ──────────────────────────────────────────────────
+  return (
+    <div>
+      <div className="group relative overflow-hidden rounded-xl border border-zinc-200">
+        <img
+          src={`data:image/jpeg;base64,${screenshotBase64}`}
+          alt="Page screenshot with annotations"
+          className="w-full block"
+        />
+        {/* Annotation regions on top of real screenshot */}
+        <AnnotationOverlay finding={finding} apiData={apiData} />
+      </div>
+
+      {/* View full screenshot button */}
+      <div className="mt-2 flex items-center justify-between">
+        <p className="font-mono text-[9px] text-zinc-400">Hover a region to see details</p>
+        <button
+          onClick={onViewFull}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-[11px] text-zinc-600 transition-colors hover:border-zinc-400 hover:text-zinc-800"
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+          </svg>
+          View full screenshot
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ── Context Banner ────────────────────────────────────────────────────────────

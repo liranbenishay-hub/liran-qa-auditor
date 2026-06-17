@@ -2476,6 +2476,18 @@ export default function AuditTool() {
                 <span className="rounded border border-zinc-200 bg-white px-2 py-0.5 font-mono text-[9px] text-zinc-500 truncate max-w-[280px]">
                   {url}
                 </span>
+                {/* Visual focus badge — shown when an evidence drawer is open */}
+                {evidenceDrawerOpen && evidenceFinding && (
+                  <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9px] font-semibold ${
+                    evidenceFinding.priority === "urgent"
+                      ? "border-red-300 bg-red-50 text-red-700"
+                      : evidenceFinding.priority === "important"
+                      ? "border-orange-300 bg-orange-50 text-orange-700"
+                      : "border-amber-300 bg-amber-50 text-amber-700"
+                  }`}>
+                    ▲ Visual focus active
+                  </span>
+                )}
               </div>
               {screenshotLoading && (
                 <span className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-2 py-0.5 font-mono text-[9px] text-zinc-500">
@@ -2483,12 +2495,12 @@ export default function AuditTool() {
                   Capturing…
                 </span>
               )}
-              {screenshotBase64 && !screenshotLoading && (
+              {screenshotBase64 && !screenshotLoading && !evidenceDrawerOpen && (
                 <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 font-mono text-[9px] font-semibold text-green-700">
                   ✓ Live screenshot
                 </span>
               )}
-              {(screenshotError || (!screenshotLoading && !screenshotBase64)) && !screenshotLoading && (
+              {(screenshotError || (!screenshotLoading && !screenshotBase64)) && !screenshotLoading && !evidenceDrawerOpen && (
                 <span className="rounded-full border border-zinc-200 bg-white px-2 py-0.5 font-mono text-[9px] text-zinc-400">
                   HTML signals only
                 </span>
@@ -2532,7 +2544,11 @@ export default function AuditTool() {
                 {/* Clickable screenshot */}
                 <div
                   className="group relative mx-3 cursor-zoom-in overflow-hidden rounded-md border border-zinc-800"
-                  onClick={() => { setScreenshotModalFinding(null); setScreenshotModalOpen(true); }}
+                  onClick={() => {
+                    // Carry the active evidence finding into the modal so annotations persist
+                    setScreenshotModalFinding(evidenceDrawerOpen && evidenceFinding ? evidenceFinding : null);
+                    setScreenshotModalOpen(true);
+                  }}
                   title="Click to enlarge"
                 >
                   <img
@@ -2541,6 +2557,10 @@ export default function AuditTool() {
                     className="w-full object-cover object-top transition-transform duration-200 group-hover:scale-[1.01]"
                     style={{ maxHeight: "300px" }}
                   />
+                  {/* Annotation overlay — visible when evidence drawer is open for a finding */}
+                  {evidenceDrawerOpen && evidenceFinding && (
+                    <AnnotationOverlay finding={evidenceFinding} apiData={apiData} />
+                  )}
                   {/* Hover overlay */}
                   <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors duration-150 group-hover:bg-black/30">
                     <div className="flex items-center gap-1.5 rounded-full border border-white/20 bg-black/60 px-3 py-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
@@ -3268,30 +3288,71 @@ export default function AuditTool() {
 function AnnotationOverlay({
   finding,
   apiData,
-  screenshotHeight,
 }: {
   finding: AuditFinding;
   apiData: APIAuditData | null;
-  /** Rendered height of the screenshot image in px — used to flip tooltip above/below */
-  screenshotHeight?: number;
 }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const regions = getAnnotationRegions(finding, apiData);
   const conf = calculateConfidence(finding, apiData, !!apiData);
 
-  const PC: Record<Priority, { bg: string; border: string; chip: string; bar: string }> = {
-    urgent:    { bg: "rgba(239,68,68,0.13)",   border: "rgba(239,68,68,0.65)",   chip: "bg-red-100 text-red-700 border-red-300",     bar: "#ef4444" },
-    important: { bg: "rgba(249,115,22,0.13)",  border: "rgba(249,115,22,0.65)",  chip: "bg-orange-100 text-orange-700 border-orange-300", bar: "#f97316" },
-    later:     { bg: "rgba(234,179,8,0.16)",   border: "rgba(234,179,8,0.70)",   chip: "bg-amber-100 text-amber-700 border-amber-300",  bar: "#eab308" },
+  // Priority → clearly visible colors
+  const PC: Record<Priority, {
+    fill: string;     // semi-transparent fill — enough to see without hover
+    fillHover: string;
+    borderColor: string;
+    shadow: string;   // box-shadow ring for extra visibility
+    chipBg: string;
+    chipText: string;
+    chipBorder: string;
+    dot: string;
+  }> = {
+    urgent: {
+      fill:        "rgba(239,68,68,0.25)",
+      fillHover:   "rgba(239,68,68,0.38)",
+      borderColor: "rgba(239,68,68,0.90)",
+      shadow:      "0 0 0 2px rgba(239,68,68,0.35), inset 0 0 0 1px rgba(239,68,68,0.20)",
+      chipBg:      "rgba(255,255,255,0.92)",
+      chipText:    "#b91c1c",
+      chipBorder:  "rgba(239,68,68,0.45)",
+      dot:         "#ef4444",
+    },
+    important: {
+      fill:        "rgba(249,115,22,0.22)",
+      fillHover:   "rgba(249,115,22,0.35)",
+      borderColor: "rgba(249,115,22,0.88)",
+      shadow:      "0 0 0 2px rgba(249,115,22,0.30), inset 0 0 0 1px rgba(249,115,22,0.18)",
+      chipBg:      "rgba(255,255,255,0.92)",
+      chipText:    "#c2410c",
+      chipBorder:  "rgba(249,115,22,0.45)",
+      dot:         "#f97316",
+    },
+    later: {
+      fill:        "rgba(234,179,8,0.22)",
+      fillHover:   "rgba(234,179,8,0.36)",
+      borderColor: "rgba(234,179,8,0.88)",
+      shadow:      "0 0 0 2px rgba(234,179,8,0.30), inset 0 0 0 1px rgba(234,179,8,0.18)",
+      chipBg:      "rgba(255,255,255,0.92)",
+      chipText:    "#92400e",
+      chipBorder:  "rgba(234,179,8,0.50)",
+      dot:         "#eab308",
+    },
   };
   const pc = PC[finding.priority];
+
+  // Label shown inside the overlay — issue title if short, else fallback
+  const shortLabel =
+    finding.issue.length <= 38
+      ? finding.issue
+      : finding.issue.length <= 60
+      ? finding.issue.slice(0, 36) + "…"
+      : "This area needs attention";
 
   return (
     <>
       {regions.map((r, i) => {
         const isHovered = hoveredIdx === i;
-        // Flip tooltip above the region when region is in lower half of image
-        const tooltipAbove = r.y > 55;
+        const tooltipAbove = r.y > 52;
         return (
           <div
             key={i}
@@ -3301,58 +3362,83 @@ function AnnotationOverlay({
               top: `${r.y}%`,
               width: `${r.width}%`,
               height: `${r.height}%`,
-              background: isHovered ? pc.bg.replace("0.13", "0.22").replace("0.16", "0.26") : pc.bg,
-              border: `2px solid ${pc.border}`,
+              background: isHovered ? pc.fillHover : pc.fill,
+              border: `3px solid ${pc.borderColor}`,
               borderRadius: 8,
-              transition: "background 120ms",
+              boxShadow: pc.shadow,
+              transition: "background 150ms",
               cursor: "default",
               zIndex: 10,
+              pointerEvents: "auto",
             }}
             onMouseEnter={() => setHoveredIdx(i)}
             onMouseLeave={() => setHoveredIdx(null)}
           >
-            {/* Region label chip — top-left corner */}
-            <div style={{ position: "absolute", top: 5, left: 5 }}>
+            {/* Always-visible label chip */}
+            <div style={{ position: "absolute", top: 6, left: 6, maxWidth: "calc(100% - 12px)" }}>
               <span
-                className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] font-semibold shadow-sm ${pc.chip}`}
-                style={{ backdropFilter: "blur(4px)", background: "rgba(255,255,255,0.85)" }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  borderRadius: 5,
+                  border: `1px solid ${pc.chipBorder}`,
+                  background: pc.chipBg,
+                  padding: "3px 7px",
+                  fontFamily: "monospace",
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color: pc.chipText,
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+                  backdropFilter: "blur(4px)",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  maxWidth: "100%",
+                }}
               >
                 <span
-                  className="inline-block h-1.5 w-1.5 rounded-full shrink-0"
-                  style={{ background: pc.bar }}
+                  style={{
+                    display: "inline-block",
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: pc.dot,
+                    flexShrink: 0,
+                  }}
                 />
-                {r.label}
+                {shortLabel}
               </span>
             </div>
 
-            {/* Hover tooltip */}
+            {/* Hover tooltip — confidence + reason */}
             {isHovered && (
               <div
-                className="absolute left-1/2 z-20 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 shadow-xl"
                 style={{
+                  position: "absolute",
+                  left: "50%",
                   transform: "translateX(-50%)",
                   ...(tooltipAbove
-                    ? { bottom: "calc(100% + 8px)" }
-                    : { top: "calc(100% + 8px)" }),
-                  minWidth: 210,
-                  maxWidth: 270,
+                    ? { bottom: "calc(100% + 10px)" }
+                    : { top: "calc(100% + 10px)" }),
+                  minWidth: 220,
+                  maxWidth: 280,
+                  zIndex: 30,
                   pointerEvents: "none",
+                  background: "white",
+                  border: "1px solid #e4e4e7",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
                 }}
               >
-                <p className="mb-1 text-[11px] font-semibold leading-snug text-zinc-800 line-clamp-2">
+                <p style={{ margin: "0 0 5px", fontSize: 11, fontWeight: 600, color: "#18181b", lineHeight: 1.4 }}>
                   {finding.issue}
                 </p>
-                <div className="mb-1.5 flex items-center gap-1.5">
-                  <span
-                    className={`rounded border px-1.5 py-px font-mono text-[9px] font-semibold ${pc.chip}`}
-                  >
-                    {finding.priority.toUpperCase()}
-                  </span>
-                  <span className="font-mono text-[9px] text-zinc-500">
-                    {conf.score}% confidence · {conf.level}
-                  </span>
-                </div>
-                <p className="text-[10px] leading-relaxed text-zinc-500 line-clamp-3">
+                <p style={{ margin: 0, fontFamily: "monospace", fontSize: 9, color: "#71717a" }}>
+                  {finding.priority.toUpperCase()} · {conf.score}% confidence · {conf.level}
+                </p>
+                <p style={{ margin: "6px 0 0", fontSize: 10, color: "#71717a", lineHeight: 1.5 }}>
                   {conf.reason}
                 </p>
               </div>

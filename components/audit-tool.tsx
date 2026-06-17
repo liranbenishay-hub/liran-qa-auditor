@@ -1067,96 +1067,92 @@ function getAnnotationRegions(finding: AuditFinding, _apiData: APIAuditData | nu
   const { category, issue } = finding;
   const kw = issue.toLowerCase();
 
-  // Named region presets
+  // Tight named region presets — % of 1280×800 screenshot
   const R = {
-    header:    { x: 0,  y: 0,  width: 100, height: 10  },  // top nav bar
-    hero:      { x: 0,  y: 0,  width: 100, height: 42  },  // hero / top section
-    aboveFold: { x: 0,  y: 0,  width: 100, height: 65  },  // full above-fold
-    ctaZone:   { x: 15, y: 18, width: 70,  height: 32  },  // typical CTA area
-    formZone:  { x: 10, y: 25, width: 80,  height: 42  },  // form / input area
-    trustZone: { x: 0,  y: 55, width: 100, height: 28  },  // social proof / logos
-    footer:    { x: 0,  y: 76, width: 100, height: 24  },  // footer
-    fullPage:  { x: 0,  y: 0,  width: 100, height: 100 },  // whole page
+    navStrip:        { x: 0,  y: 0,  width: 100, height: 9  },  // nav bar strip only
+    headlineZone:    { x: 5,  y: 8,  width: 65,  height: 18 },  // H1 headline area (left-aligned)
+    ctaButton:       { x: 20, y: 26, width: 60,  height: 14 },  // primary CTA button zone
+    heroLeftText:    { x: 0,  y: 8,  width: 55,  height: 36 },  // left-side hero text block
+    formZone:        { x: 10, y: 28, width: 80,  height: 32 },  // form / input fields
+    trustBand:       { x: 0,  y: 60, width: 100, height: 18 },  // social proof row
+    footerStrip:     { x: 0,  y: 78, width: 100, height: 22 },  // footer strip
+    fullPageOutline: { x: 1,  y: 1,  width: 98,  height: 98 },  // whole page (perf — subtle outline)
   };
 
   switch (category) {
     case "Product Clarity": {
-      if (kw.includes("h1") || kw.includes("headline") || kw.includes("value statement") || kw.includes("hero"))
-        return [{ ...R.hero, label: "Hero — missing value statement" }];
+      if (kw.includes("h1") || kw.includes("headline") || kw.includes("value") || kw.includes("proposition") || kw.includes("hero"))
+        return [{ ...R.headlineZone, label: "Expected headline" }];
       if (kw.includes("title") || kw.includes("product name"))
-        return [{ ...R.hero, label: "Hero — missing product title" }];
-      if (kw.includes("description") || kw.includes("meta"))
-        return [{ ...R.hero, label: "Hero — missing description" }];
+        return [{ ...R.headlineZone, label: "Expected headline" }];
+      if (kw.includes("description") || kw.includes("clarity") || kw.includes("clear"))
+        return [{ ...R.headlineZone, label: "Expected headline" }, { ...R.heroLeftText, label: "Value statement" }];
       if (kw.includes("word") || kw.includes("content") || kw.includes("story"))
-        return [{ ...R.hero, label: "Hero" }, { ...R.trustZone, label: "Body content" }];
-      return [{ ...R.hero, label: "Hero / above-fold" }];
+        return [{ ...R.heroLeftText, label: "Value statement" }, { ...R.trustBand, label: "Body content" }];
+      return [{ ...R.headlineZone, label: "Expected headline" }];
     }
 
     case "User Journey": {
-      if (kw.includes("navigation") || kw.includes("nav") || kw.includes("menu") || kw.includes("link"))
-        return [{ ...R.header, label: "Navigation bar" }];
+      if (kw.includes("navigation") || kw.includes("nav") || kw.includes("menu") || kw.includes("overload") || kw.includes("link"))
+        return [{ ...R.navStrip, label: "Navigation overload" }];
       if (kw.includes("cta") || kw.includes("action") || kw.includes("next step"))
-        return [{ ...R.header, label: "Navigation" }, { ...R.ctaZone, label: "Primary CTA" }];
-      return [{ ...R.header, label: "Navigation" }, { ...R.ctaZone, label: "Conversion path" }];
+        return [{ ...R.ctaButton, label: "Missing CTA" }];
+      return [{ ...R.navStrip, label: "Navigation overload" }, { ...R.ctaButton, label: "Missing CTA" }];
     }
 
     case "Conversion": {
       if (kw.includes("cta") || kw.includes("button") || kw.includes("action") || kw.includes("call to action"))
-        return [{ ...R.ctaZone, label: "Primary CTA zone" }];
-      if (kw.includes("form") || kw.includes("signup") || kw.includes("sign up"))
-        return [{ ...R.formZone, label: "Signup / conversion form" }];
+        return [{ ...R.ctaButton, label: "Missing CTA" }];
+      if (kw.includes("form") || kw.includes("signup") || kw.includes("sign up") || kw.includes("register"))
+        return [{ ...R.formZone, label: "Conversion form" }];
       if (kw.includes("pric"))
-        return [{ ...R.ctaZone, label: "Pricing & CTA area" }];
-      return [{ ...R.ctaZone, label: "Above-fold CTA zone" }];
+        return [{ ...R.ctaButton, label: "Missing CTA" }];
+      return [{ ...R.ctaButton, label: "Missing CTA" }];
     }
 
     case "UX Friction": {
       if (kw.includes("form") || kw.includes("field") || kw.includes("input") || kw.includes("step"))
-        return [{ ...R.formZone, label: "Form — friction point" }];
+        return [{ ...R.formZone, label: "Form friction" }];
       if (kw.includes("nav") || kw.includes("link") || kw.includes("menu"))
-        return [{ ...R.header, label: "Navigation friction" }];
-      return [{ ...R.ctaZone, label: "Primary interaction zone" }];
+        return [{ ...R.navStrip, label: "Navigation overload" }];
+      return [{ ...R.ctaButton, label: "UX friction zone" }];
     }
 
     case "Trust Signals": {
       if (kw.includes("contact") || kw.includes("team") || kw.includes("about"))
-        return [{ ...R.footer, label: "Contact / team area" }];
-      if (kw.includes("review") || kw.includes("testimonial") || kw.includes("social proof"))
-        return [{ ...R.trustZone, label: "Social proof zone" }];
+        return [{ ...R.footerStrip, label: "Trust proof missing" }];
+      if (kw.includes("review") || kw.includes("testimonial") || kw.includes("social proof") || kw.includes("logo"))
+        return [{ ...R.trustBand, label: "Trust proof missing" }];
       return [
-        { ...R.trustZone, label: "Trust signals area" },
-        { ...R.footer, label: "Footer / contact" },
+        { ...R.trustBand,    label: "Trust proof missing" },
+        { ...R.footerStrip,  label: "Trust proof missing" },
       ];
     }
 
     case "Accessibility": {
       if (kw.includes("alt") || kw.includes("image") || kw.includes("img"))
-        return [{ ...R.hero, label: "Hero images — missing alt text" }];
+        return [{ ...R.heroLeftText, label: "Missing alt text" }];
       if (kw.includes("contrast") || kw.includes("color"))
-        return [{ ...R.aboveFold, label: "Above-fold — contrast issue" }];
+        return [{ ...R.headlineZone, label: "Contrast issue" }];
       if (kw.includes("label") || kw.includes("input") || kw.includes("form"))
-        return [{ ...R.formZone, label: "Form — missing labels" }];
-      return [{ ...R.aboveFold, label: "Above-fold content" }];
+        return [{ ...R.formZone, label: "Missing labels" }];
+      return [{ ...R.headlineZone, label: "Accessibility issue" }];
     }
 
     case "Mobile Experience": {
       if (kw.includes("viewport") || kw.includes("meta"))
-        return [{ ...R.hero, label: "Mobile viewport area" }];
+        return [{ ...R.headlineZone, label: "Mobile viewport" }];
       if (kw.includes("touch") || kw.includes("tap") || kw.includes("button"))
-        return [{ ...R.ctaZone, label: "Touch targets" }];
-      return [{ ...R.aboveFold, label: "Mobile above-fold" }];
+        return [{ ...R.ctaButton, label: "Touch target" }];
+      return [{ ...R.headlineZone, label: "Mobile issue" }, { ...R.ctaButton, label: "Touch target" }];
     }
 
-    case "Performance Perception": {
-      if (kw.includes("script") || kw.includes("javascript") || kw.includes("js"))
-        return [{ ...R.hero, label: "Initial render (JS blocking)" }];
-      if (kw.includes("image") || kw.includes("img") || kw.includes("lcp"))
-        return [{ ...R.hero, label: "Hero image (LCP zone)" }];
-      return [{ ...R.hero, label: "Initial render area" }];
-    }
+    case "Performance Perception":
+      // Full-page subtle outline — not a big filled region
+      return [{ ...R.fullPageOutline, label: "Render performance" }];
 
     default:
-      return [{ ...R.hero, label: "Page area" }];
+      return [{ ...R.headlineZone, label: "Issue area" }];
   }
 }
 
@@ -2003,7 +1999,16 @@ export default function AuditTool() {
   // so we can render the matching annotation overlay inside the full screenshot.
   const [screenshotModalFinding, setScreenshotModalFinding] = useState<AuditFinding | null>(null);
 
+  // Modal zoom/pan state
+  const [modalZoom, setModalZoom] = useState(1);
+  const [modalPan, setModalPan] = useState({ x: 0, y: 0 });
+  const [modalIsDragging, setModalIsDragging] = useState(false);
+  const modalDragging = useRef(false);
+  const modalLastPos = useRef({ x: 0, y: 0 });
+
   const resultRef = useRef<HTMLDivElement>(null);
+  const pageSnapshotRef = useRef<HTMLDivElement>(null);
+  const [snapshotHighlight, setSnapshotHighlight] = useState<Priority | null>(null);
 
   useEffect(() => {
     if (drawerOpen || evidenceDrawerOpen || screenshotModalOpen) document.body.style.overflow = "hidden";
@@ -2021,6 +2026,16 @@ export default function AuditTool() {
     }
     if (screenshotModalOpen) window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, [screenshotModalOpen]);
+
+  // Reset zoom & pan when modal closes
+  useEffect(() => {
+    if (!screenshotModalOpen) {
+      setModalZoom(1);
+      setModalPan({ x: 0, y: 0 });
+      setModalIsDragging(false);
+      modalDragging.current = false;
+    }
   }, [screenshotModalOpen]);
 
   // ── Drag handlers ─────────────────────────────────────────────────────────
@@ -2044,6 +2059,17 @@ export default function AuditTool() {
     setDragOverIdx(null);
   }
   function handleDragEnd() { setDragIdx(null); setDragOverIdx(null); }
+
+  /** Close the evidence drawer, smooth-scroll to the Page Snapshot card, then pulse-highlight it for 2s */
+  function jumpToSnapshot(priority: Priority) {
+    setEvidenceDrawerOpen(false);
+    // body.overflow is re-unlocked by the useEffect when evidenceDrawerOpen becomes false
+    setTimeout(() => {
+      pageSnapshotRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setSnapshotHighlight(priority);
+      setTimeout(() => setSnapshotHighlight(null), 2000);
+    }, 150);
+  }
 
   function moveCategory(from: number, to: number) {
     if (to < 0 || to >= categoryOrder.length) return;
@@ -2466,7 +2492,15 @@ export default function AuditTool() {
           </div>
 
           {/* ── Page Snapshot ──────────────────────────────────────────────── */}
-          <div className="overflow-hidden rounded-xl border border-zinc-200">
+          <div
+            ref={pageSnapshotRef}
+            className={`overflow-hidden rounded-xl border transition-all duration-500 ${
+              snapshotHighlight === "urgent"    ? "border-red-400 ring-4 ring-red-300/50 ring-offset-2"
+              : snapshotHighlight === "important" ? "border-orange-400 ring-4 ring-orange-300/50 ring-offset-2"
+              : snapshotHighlight === "later"     ? "border-amber-400 ring-4 ring-amber-300/50 ring-offset-2"
+              : "border-zinc-200"
+            }`}
+          >
             {/* Header */}
             <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50 px-4 py-2.5">
               <div className="flex items-center gap-2 min-w-0">
@@ -3004,7 +3038,7 @@ export default function AuditTool() {
                 </span>
                 {screenshotModalFinding && (
                   <span className="ml-2 rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 font-mono text-[9px] text-zinc-400 truncate max-w-[200px]">
-                    ↑ annotated: {screenshotModalFinding.category}
+                    ↑ {screenshotModalFinding.category}
                   </span>
                 )}
                 <button
@@ -3018,34 +3052,96 @@ export default function AuditTool() {
                 </button>
               </div>
 
-              {/* Full screenshot — with optional annotation overlay */}
-              <div className="relative overflow-auto bg-zinc-950" style={{ maxHeight: "calc(90vh - 80px)" }}>
-                <img
-                  src={`data:image/jpeg;base64,${screenshotBase64}`}
-                  alt={`Full screenshot of ${result.domain}`}
-                  className="w-full"
-                />
-                {/* Annotation overlay when opened from evidence drawer */}
-                {screenshotModalFinding && (
-                  <AnnotationOverlay
-                    finding={screenshotModalFinding}
-                    apiData={apiData}
+              {/* Full screenshot — zoomable & pannable */}
+              <div
+                className="relative overflow-hidden bg-zinc-950 select-none"
+                style={{
+                  maxHeight: "calc(90vh - 80px)",
+                  cursor: modalZoom > 1 ? (modalIsDragging ? "grabbing" : "grab") : "default",
+                }}
+                onWheel={(e) => {
+                  e.preventDefault();
+                  const d = e.deltaY < 0 ? 0.25 : -0.25;
+                  setModalZoom((z) => {
+                    const next = Math.max(1, Math.min(4, parseFloat((z + d).toFixed(2))));
+                    if (next === 1) setModalPan({ x: 0, y: 0 });
+                    return next;
+                  });
+                }}
+                onMouseDown={(e) => {
+                  if (modalZoom <= 1) return;
+                  modalDragging.current = true;
+                  setModalIsDragging(true);
+                  modalLastPos.current = { x: e.clientX, y: e.clientY };
+                }}
+                onMouseMove={(e) => {
+                  if (!modalDragging.current) return;
+                  const dx = e.clientX - modalLastPos.current.x;
+                  const dy = e.clientY - modalLastPos.current.y;
+                  modalLastPos.current = { x: e.clientX, y: e.clientY };
+                  setModalPan((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+                }}
+                onMouseUp={() => { modalDragging.current = false; setModalIsDragging(false); }}
+                onMouseLeave={() => { modalDragging.current = false; setModalIsDragging(false); }}
+              >
+                <div
+                  style={{
+                    transform: `translate(${modalPan.x}px, ${modalPan.y}px) scale(${modalZoom})`,
+                    transformOrigin: "top center",
+                    transition: modalIsDragging ? "none" : "transform 0.15s ease",
+                  }}
+                >
+                  <img
+                    src={`data:image/jpeg;base64,${screenshotBase64}`}
+                    alt={`Full screenshot of ${result.domain}`}
+                    className="w-full block"
+                    draggable={false}
                   />
-                )}
+                  {/* Annotation overlay — preserved at all zoom levels */}
+                  {screenshotModalFinding && (
+                    <AnnotationOverlay
+                      finding={screenshotModalFinding}
+                      apiData={apiData}
+                    />
+                  )}
+                </div>
               </div>
 
               {/* Modal footer */}
-              <div className="flex items-center gap-4 bg-zinc-950 px-4 py-2 border-t border-zinc-800">
+              <div className="flex items-center gap-3 bg-zinc-950 px-4 py-2 border-t border-zinc-800">
                 {screenshotMeta && (
                   <>
                     <span className="font-mono text-[9px] text-zinc-500">🖥 {screenshotMeta.viewport} · 1280×800</span>
                     <span className="font-mono text-[9px] text-zinc-500">
-                      Captured {new Date(screenshotMeta.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                      {new Date(screenshotMeta.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                     </span>
-                    <span className="font-mono text-[9px] text-zinc-500">{(screenshotMeta.durationMs / 1000).toFixed(1)}s render</span>
                   </>
                 )}
-                <span className="ml-auto font-mono text-[9px] text-zinc-600">Esc or click outside to close</span>
+                {/* Zoom controls */}
+                <div className="ml-auto flex items-center gap-1">
+                  <button
+                    onClick={() => { const n = Math.max(1, parseFloat((modalZoom - 0.25).toFixed(2))); if (n === 1) setModalPan({x:0,y:0}); setModalZoom(n); }}
+                    className="flex h-6 w-6 items-center justify-center rounded border border-zinc-700 font-mono text-xs text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-40"
+                    disabled={modalZoom <= 1}
+                    aria-label="Zoom out"
+                  >−</button>
+                  <span className="min-w-[38px] text-center font-mono text-[10px] text-zinc-400 tabular-nums">
+                    {Math.round(modalZoom * 100)}%
+                  </span>
+                  <button
+                    onClick={() => setModalZoom((z) => Math.min(4, parseFloat((z + 0.25).toFixed(2))))}
+                    className="flex h-6 w-6 items-center justify-center rounded border border-zinc-700 font-mono text-xs text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-40"
+                    disabled={modalZoom >= 4}
+                    aria-label="Zoom in"
+                  >+</button>
+                  {modalZoom !== 1 && (
+                    <button
+                      onClick={() => { setModalZoom(1); setModalPan({ x: 0, y: 0 }); }}
+                      className="ml-1 rounded border border-zinc-700 px-2 py-px font-mono text-[9px] text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 transition-colors"
+                    >Reset</button>
+                  )}
+                  <span className="ml-3 font-mono text-[9px] text-zinc-600">Scroll to zoom · drag to pan · Esc to close</span>
+                </div>
               </div>
             </div>
           </div>
@@ -3086,8 +3182,8 @@ export default function AuditTool() {
               {/* Panel — white/light, distinct from the dark fix prompt panel */}
               <div className="
                 fixed bottom-0 left-0 right-0 z-50
-                flex max-h-[92vh] flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl
-                lg:inset-y-0 lg:bottom-auto lg:left-auto lg:right-0 lg:top-0 lg:max-h-none lg:w-[480px] lg:rounded-none lg:rounded-l-2xl
+                flex h-[92vh] flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl
+                lg:inset-y-0 lg:bottom-auto lg:left-auto lg:right-0 lg:top-0 lg:h-full lg:w-[480px] lg:rounded-none lg:rounded-l-2xl
               ">
 
                 {/* ── Header ─────────────────────────────────────────────────── */}
@@ -3122,8 +3218,105 @@ export default function AuditTool() {
                 </div>
 
                 {/* ── Scrollable body ─────────────────────────────────────────── */}
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto overscroll-contain">
                   <div className="space-y-5 p-5">
+
+                    {/* ── Visual focus screenshot preview ─────────────────────── */}
+                    <div>
+                      <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                        Visual focus
+                      </p>
+                      {/* Screenshot container — 280px high shows a readable portion of the page */}
+                      <div
+                        className="relative overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100"
+                        style={{ height: 280 }}
+                      >
+                        {screenshotBase64 ? (
+                          /* ── Real screenshot — shown whenever base64 data is available ── */
+                          <>
+                            <img
+                              src={`data:image/jpeg;base64,${screenshotBase64}`}
+                              alt="Page screenshot with annotation"
+                              style={{ width: "100%", display: "block" }}
+                            />
+                            {/* Annotation overlay — percentage coords on the full image */}
+                            <div style={{ position: "absolute", inset: 0 }}>
+                              <AnnotationOverlay finding={evidenceFinding} apiData={apiData} />
+                            </div>
+                            {/* Subtle loading overlay if a fresh capture is in progress */}
+                            {screenshotLoading && (
+                              <div className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-1">
+                                <div className="h-2 w-2 animate-spin rounded-full border border-white/60 border-t-white" />
+                                <span className="font-mono text-[8px] text-white/80">Refreshing…</span>
+                              </div>
+                            )}
+                          </>
+                        ) : screenshotLoading ? (
+                          /* ── Capturing — no data yet ── */
+                          <div className="flex h-full items-center justify-center">
+                            <div className="text-center">
+                              <div className="mx-auto mb-1.5 h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600" />
+                              <p className="font-mono text-[9px] text-zinc-400">Capturing screenshot…</p>
+                            </div>
+                          </div>
+                        ) : screenshotError ? (
+                          /* ── Capture failed — show error, not wireframe ── */
+                          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-400">
+                              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                            </svg>
+                            <p className="font-mono text-[9px] text-zinc-500">Screenshot unavailable</p>
+                            <p className="font-mono text-[8px] text-zinc-400">Jump to snapshot to see the page</p>
+                          </div>
+                        ) : (
+                          /* ── Pre-capture wireframe — screenshot not yet requested ── */
+                          <div className="relative h-full">
+                            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "14%", background: "#27272a" }} />
+                            <div style={{ position: "absolute", top: "14%", left: 0, right: 0, height: "50%", background: "#3f3f46" }} />
+                            <div style={{ position: "absolute", top: "14%", left: "20%", width: "60%", height: "3%", background: "#52525b", borderRadius: 4 }} />
+                            <div style={{ position: "absolute", top: "22%", left: "30%", width: "40%", height: "2%", background: "#3f3f46", borderRadius: 4 }} />
+                            <div style={{ position: "absolute", top: "30%", left: "35%", width: "30%", height: "7%", background: "#52525b", borderRadius: 6 }} />
+                            <AnnotationOverlay finding={evidenceFinding} apiData={apiData} />
+                          </div>
+                        )}
+                        {/* Subtle bottom fade — hints that the page continues below the crop */}
+                        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 40, background: "linear-gradient(to bottom, transparent, rgba(255,255,255,0.90))", pointerEvents: "none" }} />
+                      </div>
+                      {/* Action buttons */}
+                      <div className="mt-2 flex gap-2">
+                        {/* Jump to main screenshot — closes drawer, scrolls + highlights */}
+                        <button
+                          onClick={() => jumpToSnapshot(evidenceFinding.priority)}
+                          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-[10px] text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-800"
+                        >
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
+                          </svg>
+                          Jump to snapshot
+                        </button>
+                        {/* Open zoomed modal */}
+                        {screenshotBase64 && (
+                          <button
+                            onClick={() => { setScreenshotModalFinding(evidenceFinding); setScreenshotModalOpen(true); }}
+                            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-[10px] text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-800"
+                          >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                            </svg>
+                            Full screenshot
+                          </button>
+                        )}
+                      </div>
+                      <p className="mt-1.5 text-center font-mono text-[9px] text-zinc-400">
+                        {screenshotBase64
+                          ? "Annotated preview · jump to main snapshot for full detail"
+                          : screenshotLoading
+                          ? "Capturing screenshot — annotation based on page structure"
+                          : screenshotError
+                          ? "Screenshot unavailable · annotation based on page structure"
+                          : "Awaiting screenshot · annotation based on page structure"}
+                      </p>
+                    </div>
 
                     {/* ── Confidence section ──────────────────────────────────── */}
                     {(() => {
@@ -3340,19 +3533,19 @@ function AnnotationOverlay({
   };
   const pc = PC[finding.priority];
 
-  // Label shown inside the overlay — issue title if short, else fallback
-  const shortLabel =
-    finding.issue.length <= 38
-      ? finding.issue
-      : finding.issue.length <= 60
-      ? finding.issue.slice(0, 36) + "…"
-      : "This area needs attention";
-
   return (
     <>
       {regions.map((r, i) => {
         const isHovered = hoveredIdx === i;
         const tooltipAbove = r.y > 52;
+        // Full-page outline (performance) gets a very subtle treatment
+        const isFullPage = r.width >= 90 && r.height >= 90;
+        const fill = isHovered
+          ? (isFullPage ? "rgba(0,0,0,0.04)" : pc.fillHover)
+          : (isFullPage ? "rgba(0,0,0,0.0)" : pc.fill);
+        const borderColor = isFullPage
+          ? pc.borderColor.replace(/[\d.]+\)$/, "0.45)")
+          : pc.borderColor;
         return (
           <div
             key={i}
@@ -3362,10 +3555,10 @@ function AnnotationOverlay({
               top: `${r.y}%`,
               width: `${r.width}%`,
               height: `${r.height}%`,
-              background: isHovered ? pc.fillHover : pc.fill,
-              border: `3px solid ${pc.borderColor}`,
+              background: fill,
+              border: `${isFullPage ? 2 : 3}px solid ${borderColor}`,
               borderRadius: 8,
-              boxShadow: pc.shadow,
+              boxShadow: isFullPage ? "none" : pc.shadow,
               transition: "background 150ms",
               cursor: "default",
               zIndex: 10,
@@ -3407,7 +3600,7 @@ function AnnotationOverlay({
                     flexShrink: 0,
                   }}
                 />
-                {shortLabel}
+                {r.label}
               </span>
             </div>
 

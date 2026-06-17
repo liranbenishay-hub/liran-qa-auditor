@@ -146,7 +146,7 @@ export async function POST(req: NextRequest) {
 
     const buffer = await page.screenshot({
       type: "jpeg",
-      quality: 75,
+      quality: 90,
       clip: { x: 0, y: 0, width: VIEWPORT.width, height: VIEWPORT.height },
     });
 

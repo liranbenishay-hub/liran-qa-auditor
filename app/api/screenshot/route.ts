@@ -27,8 +27,10 @@ export const maxDuration = 60; // Needed for browser cold start + page render
  * chromium-min downloads this on first invocation and caches it in /tmp.
  * Subsequent (warm) calls reuse the cached binary.
  */
+// Starting at v135, Sparticuz uses architecture-specific pack filenames (pack.x64.tar / pack.arm64.tar).
+// The old "pack.tar" path returns HTTP 404 for v149+.
 const CHROMIUM_PACK_URL =
-  "https://github.com/Sparticuz/chromium/releases/download/v149.0.0/chromium-v149.0.0-pack.tar";
+  "https://github.com/Sparticuz/chromium/releases/download/v149.0.0/chromium-v149.0.0-pack.x64.tar";
 
 const SCREENSHOT_TIMEOUT_MS = 25_000; // 25s — leaves buffer within 60s maxDuration
 const PAGE_LOAD_TIMEOUT_MS  = 15_000; // 15s for page load
@@ -38,7 +40,7 @@ const VIEWPORT = {
   height: 800,
   deviceScaleFactor: 1,
   hasTouch: false,
-  isLandscape: true,
+  // isLandscape removed — not a valid field in puppeteer-core v24 Viewport type
   isMobile: false,
 };
 
@@ -94,14 +96,19 @@ export async function POST(req: NextRequest) {
 
     chromium.setGraphicsMode = false; // Disable WebGL — not needed for screenshots
 
+    console.log("[screenshot] Resolving Chromium executable from:", CHROMIUM_PACK_URL);
     const executablePath = await chromium.executablePath(CHROMIUM_PACK_URL);
+    console.log("[screenshot] Chromium executable path:", executablePath);
 
     browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: VIEWPORT,
       executablePath,
-      headless: true,
+      // Must be "shell" — @sparticuz/chromium ships a headless-shell binary,
+      // not a full Chrome binary. headless: true launches the wrong mode.
+      headless: "shell",
     });
+    console.log("[screenshot] Browser launched successfully");
   } catch (err) {
     console.error("[screenshot] Browser launch failed:", err);
     return NextResponse.json(
@@ -144,6 +151,7 @@ export async function POST(req: NextRequest) {
     });
 
     screenshotBase64 = Buffer.from(buffer).toString("base64");
+    console.log("[screenshot] Screenshot captured successfully, size:", screenshotBase64.length, "chars");
   } catch (err) {
     console.error("[screenshot] Page capture failed:", err);
     await browser.close().catch(() => {});

@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Builder QA Auditor — Product & UX audit for AI-built sites",
+  title: "AI Website Iteration Coach — Feedback & fix prompts for AI-built sites",
   description:
-    "Paste your Lovable, Base44, Bolt, Claude or Cursor site URL. Get product, UX, and QA issues instantly — with the exact prompt to fix each one in your builder.",
+    "Get actionable feedback, visual evidence, and builder-ready prompts for websites built with Lovable, Claude, Base44, Bolt, v0, or Replit. No signup required.",
   openGraph: {
-    title: "AI Builder QA Auditor",
+    title: "AI Website Iteration Coach",
     description:
-      "Audit your AI-built site. Find product, UX & QA issues. Get builder-specific fix prompts.",
+      "Paste your AI-built site URL. Get feedback, visual evidence, and exact fix prompts for Lovable, Claude, Base44, Bolt, v0, and Replit.",
     type: "website",
   },
 };

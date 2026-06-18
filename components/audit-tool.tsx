@@ -2101,8 +2101,10 @@ export default function AuditTool() {
     return t && !t.startsWith("http") ? `https://${t}` : t;
   }
 
-  async function runAudit() {
-    const norm = normalise(url);
+  async function runAudit(urlOverride?: string) {
+    const raw = urlOverride ?? url;
+    if (urlOverride) setUrl(urlOverride);
+    const norm = normalise(raw);
     if (!norm) { setError("Enter a URL to audit."); return; }
     setError("");
     setAuditState("loading");
@@ -2257,6 +2259,10 @@ export default function AuditTool() {
     }
   }
 
+  function viewExampleAudit() {
+    runAudit("https://rapyd-spark-insights.lovable.app/");
+  }
+
   function startDemoIteration() {
     setDemoOpen(true);
     setDemoPhase(1);
@@ -2316,121 +2322,93 @@ export default function AuditTool() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  // ── Idle ──────────────────────────────────────────────────────────────────
+  // ── Idle — Google-style centered homepage ────────────────────────────────
   if (auditState === "idle") return (
     <>
-    <div className="rounded-xl border border-zinc-200 bg-white p-6 sm:p-8">
-      <p className="mb-2 font-mono text-xs font-semibold uppercase tracking-widest text-zinc-400">Run an audit</p>
-      <p className="mb-5 text-sm text-zinc-500">
-        Enter the URL of your AI-built site. Drag the category pills to prioritise which issues appear first in the audit.
+    {/* ── Clean centered homepage ───────────────────────────────────────── */}
+    <div className="flex min-h-[82vh] flex-col items-center justify-center px-4 py-20 text-center">
+
+      {/* Brand pill */}
+      <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-1.5 shadow-sm">
+        <span className="h-1.5 w-1.5 rounded-full bg-zinc-800" />
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">AI Builder</span>
+      </div>
+
+      {/* Headline */}
+      <h1 className="mb-4 max-w-2xl text-4xl font-bold tracking-tight text-zinc-900 sm:text-[52px] sm:leading-tight">
+        AI Website<br className="hidden sm:block" /> Iteration Coach
+      </h1>
+
+      {/* Subtitle */}
+      <p className="mb-10 max-w-md text-base leading-relaxed text-zinc-500 sm:text-lg">
+        Get actionable feedback, visual evidence, and builder-ready prompts for AI-generated websites.
       </p>
 
-      {/* URL input */}
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row">
-        <div className="flex flex-1 flex-col gap-1">
+      {/* URL input + CTA */}
+      <div className="w-full max-w-[560px]">
+        <div className="flex flex-col gap-3 sm:flex-row">
           <input
-            type="text" value={url}
+            type="text"
+            value={url}
             onChange={(e) => { setUrl(e.target.value); setError(""); }}
             onKeyDown={(e) => { if (e.key === "Enter") runAudit(); }}
             placeholder="https://myapp.lovable.app"
-            className={`w-full rounded-lg border px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-300 outline-none transition-colors focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 ${error ? "border-red-300 bg-red-50" : "border-zinc-200 hover:border-zinc-300"}`}
+            className={`flex-1 rounded-xl border px-5 py-4 text-base text-zinc-900 shadow-sm placeholder:text-zinc-300 outline-none transition-all focus:ring-2 focus:ring-zinc-900/10 ${error ? "border-red-300 bg-red-50" : "border-zinc-200 hover:border-zinc-300 focus:border-zinc-400"}`}
             autoFocus
           />
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          <button
+            onClick={() => runAudit()}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-zinc-900 px-7 py-4 text-base font-semibold text-white shadow-sm transition-colors hover:bg-zinc-700 active:scale-[0.98]"
+          >
+            Analyze Website →
+          </button>
         </div>
-        <button onClick={runAudit} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 active:scale-[0.98]">
-          Run audit →
-        </button>
+        {error && <p className="mt-2 text-left text-sm text-red-500">{error}</p>}
       </div>
 
-      {/* Demo iteration trigger */}
-      <div className="mb-5 flex items-center gap-2.5">
-        <span className="text-xs text-zinc-400">No site yet?</span>
+      {/* Builder chips */}
+      <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
+        {["Lovable", "Claude", "Base44", "Bolt", "v0", "Replit"].map((b) => (
+          <span
+            key={b}
+            className="rounded-full border border-zinc-200 bg-white px-3 py-1 font-mono text-[11px] text-zinc-500 shadow-sm"
+          >
+            {b}
+          </span>
+        ))}
+      </div>
+
+      {/* Trust statement */}
+      <p className="mt-4 text-sm text-zinc-400">
+        Works alongside your favorite AI website builder.{" "}
+        <span className="text-zinc-500 font-medium">No signup required.</span>
+      </p>
+
+      {/* Secondary actions */}
+      <div className="mt-9 flex flex-wrap items-center justify-center gap-3 sm:gap-6">
+        <button
+          onClick={viewExampleAudit}
+          className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-5 py-2.5 text-sm font-medium text-zinc-700 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/><polygon points="10,8 16,12 10,16"/>
+          </svg>
+          View Example Audit
+        </button>
         <button
           onClick={startDemoIteration}
-          className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-zinc-300 px-3 py-1 text-[11px] font-medium text-zinc-500 transition-colors hover:border-zinc-500 hover:text-zinc-700"
+          className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-zinc-600"
         >
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
-          Run demo iteration
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+          See iteration demo
         </button>
       </div>
 
-      {/* Category priority tags */}
-      <div className="border-t border-zinc-100 pt-5">
-        <div className="mb-3 flex items-center gap-2">
-          <p className="font-mono text-xs font-semibold uppercase tracking-widest text-zinc-400">
-            Audit priority
-          </p>
-          <span className="text-xs text-zinc-400">— drag to reorder · leftmost = highest priority</span>
-        </div>
+      {/* Fine print */}
+      <p className="mt-8 font-mono text-[10px] text-zinc-300">
+        Not a website builder · Works with sites built on Lovable, Claude, Base44, Bolt, v0, Replit
+      </p>
 
-        {/* Desktop: draggable */}
-        <div className="hidden flex-wrap gap-2 sm:flex">
-          {categoryOrder.map((cat, idx) => (
-            <div
-              key={cat}
-              draggable
-              onDragStart={(e) => handleDragStart(e, idx)}
-              onDragOver={(e) => handleDragOver(e, idx)}
-              onDrop={(e) => handleDrop(e, idx)}
-              onDragEnd={handleDragEnd}
-              className={`
-                flex cursor-grab select-none items-center gap-1.5 rounded-full border px-3 py-1.5
-                font-mono text-xs transition-all duration-100 active:cursor-grabbing
-                ${dragIdx === idx ? "opacity-40 scale-95" : ""}
-                ${dragOverIdx === idx && dragIdx !== idx ? "border-zinc-400 bg-zinc-800 text-zinc-200" : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"}
-              `}
-            >
-              {/* Drag handle dots */}
-              <span className="text-zinc-700 text-[9px] leading-none">⠿</span>
-              {/* Category colour dot */}
-              <span className={`h-1.5 w-1.5 rounded-full ${CAT_DOTS[cat] ?? "bg-zinc-600"}`} />
-              {/* Position badge for top 3 */}
-              {idx < 3 && (
-                <span className={`font-mono text-[9px] font-bold ${idx === 0 ? "text-red-400" : idx === 1 ? "text-amber-400" : "text-zinc-500"}`}>
-                  {idx + 1}
-                </span>
-              )}
-              {cat}
-            </div>
-          ))}
-        </div>
-
-        {/* Mobile: up/down buttons */}
-        <div className="flex flex-col gap-1.5 sm:hidden">
-          {categoryOrder.map((cat, idx) => (
-            <div key={cat} className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
-              <span className={`h-2 w-2 rounded-full ${CAT_DOTS[cat] ?? "bg-zinc-400"}`} />
-              <span className="flex-1 font-mono text-xs text-zinc-700">{cat}</span>
-              {idx < 3 && (
-                <span className={`font-mono text-[9px] font-bold ${idx === 0 ? "text-red-500" : idx === 1 ? "text-amber-500" : "text-zinc-400"}`}>
-                  #{idx + 1}
-                </span>
-              )}
-              <div className="flex gap-0.5">
-                <button
-                  onClick={() => moveCategory(idx, idx - 1)}
-                  disabled={idx === 0}
-                  className="rounded p-1 text-zinc-400 hover:text-zinc-700 disabled:opacity-20"
-                  aria-label="Move up"
-                >
-                  <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /></svg>
-                </button>
-                <button
-                  onClick={() => moveCategory(idx, idx + 1)}
-                  disabled={idx === categoryOrder.length - 1}
-                  className="rounded p-1 text-zinc-400 hover:text-zinc-700 disabled:opacity-20"
-                  aria-label="Move down"
-                >
-                  <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <p className="mt-3 text-xs text-zinc-400">Real audit: fetches the page and analyses actual HTML · If blocked, falls back to URL heuristics · No data stored</p>
-      </div>
     </div>
 
     {/* ── Demo Iteration Card ─────────────────────────────────────── */}

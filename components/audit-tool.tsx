@@ -1999,6 +1999,10 @@ export default function AuditTool() {
   // so we can render the matching annotation overlay inside the full screenshot.
   const [screenshotModalFinding, setScreenshotModalFinding] = useState<AuditFinding | null>(null);
 
+  // Demo iteration mode — simulated progress card
+  const [demoOpen, setDemoOpen] = useState(false);
+  const [demoPhase, setDemoPhase] = useState(0);
+
   // Modal zoom/pan state
   const [modalZoom, setModalZoom] = useState(1);
   const [modalPan, setModalPan] = useState({ x: 0, y: 0 });
@@ -2253,6 +2257,18 @@ export default function AuditTool() {
     }
   }
 
+  function startDemoIteration() {
+    setDemoOpen(true);
+    setDemoPhase(1);
+    setTimeout(() => setDemoPhase(2), 1500);   // audit 1 score revealed
+    setTimeout(() => setDemoPhase(3), 2500);   // fix prompts 1 shown
+    setTimeout(() => setDemoPhase(4), 3200);   // audit 2 scanning
+    setTimeout(() => setDemoPhase(5), 4700);   // audit 2 score revealed
+    setTimeout(() => setDemoPhase(6), 5700);   // fix prompts 2 shown
+    setTimeout(() => setDemoPhase(7), 6400);   // audit 3 scanning
+    setTimeout(() => setDemoPhase(8), 7900);   // audit 3 score revealed
+  }
+
   function reset() {
     setAuditState("idle"); setUrl(""); setResult(null); setApiData(null);
     setIsRealAudit(false); setSiteContext(null); setError(""); setCopied(false);
@@ -2302,6 +2318,7 @@ export default function AuditTool() {
 
   // ── Idle ──────────────────────────────────────────────────────────────────
   if (auditState === "idle") return (
+    <>
     <div className="rounded-xl border border-zinc-200 bg-white p-6 sm:p-8">
       <p className="mb-2 font-mono text-xs font-semibold uppercase tracking-widest text-zinc-400">Run an audit</p>
       <p className="mb-5 text-sm text-zinc-500">
@@ -2323,6 +2340,18 @@ export default function AuditTool() {
         </div>
         <button onClick={runAudit} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 active:scale-[0.98]">
           Run audit →
+        </button>
+      </div>
+
+      {/* Demo iteration trigger */}
+      <div className="mb-5 flex items-center gap-2.5">
+        <span className="text-xs text-zinc-400">No site yet?</span>
+        <button
+          onClick={startDemoIteration}
+          className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-zinc-300 px-3 py-1 text-[11px] font-medium text-zinc-500 transition-colors hover:border-zinc-500 hover:text-zinc-700"
+        >
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+          Run demo iteration
         </button>
       </div>
 
@@ -2403,6 +2432,205 @@ export default function AuditTool() {
         <p className="mt-3 text-xs text-zinc-400">Real audit: fetches the page and analyses actual HTML · If blocked, falls back to URL heuristics · No data stored</p>
       </div>
     </div>
+
+    {/* ── Demo Iteration Card ─────────────────────────────────────── */}
+    {demoOpen && (
+      <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+        {/* Header */}
+        <div className="flex items-start justify-between border-b border-zinc-800 px-5 py-4">
+          <div className="min-w-0 mr-4">
+            <div className="mb-1 flex items-center gap-2">
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Demo iteration loop</span>
+              <span className="rounded-full bg-violet-500/20 px-2 py-0.5 font-mono text-[9px] font-semibold text-violet-300">simulated</span>
+            </div>
+            <p className="font-mono text-[11px] text-zinc-500 truncate">rapyd-spark-insights.lovable.app</p>
+          </div>
+          <button
+            onClick={() => { setDemoOpen(false); setDemoPhase(0); }}
+            className="shrink-0 flex h-7 w-7 items-center justify-center rounded-md border border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        {/* Timeline */}
+        <div className="px-5 py-5 space-y-0">
+
+          {/* ── Audit 1 ── */}
+          {demoPhase >= 1 && (
+            <div className="flex items-start gap-4">
+              {/* Score badge */}
+              <div className="shrink-0 mt-0.5">
+                {demoPhase === 1 ? (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800 border border-zinc-700">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
+                  </div>
+                ) : (
+                  <div className="flex h-12 w-12 flex-col items-center justify-center rounded-xl bg-red-500/15 border border-red-500/30">
+                    <span className="font-mono text-lg font-bold leading-none text-red-400">8</span>
+                    <span className="font-mono text-[8px] text-red-500/70">/100</span>
+                  </div>
+                )}
+              </div>
+              {/* Content */}
+              <div className="flex-1 min-w-0 pb-4">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <span className="font-mono text-xs font-semibold text-zinc-300">Audit #1</span>
+                  {demoPhase >= 2 && (
+                    <span className="rounded-full bg-red-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-red-400 border border-red-500/20">8 / 100</span>
+                  )}
+                  {demoPhase === 1 && <span className="font-mono text-[10px] text-zinc-500 animate-pulse">Scanning…</span>}
+                  {demoPhase >= 2 && <span className="font-mono text-[9px] text-zinc-500">Initial scan</span>}
+                </div>
+                {demoPhase >= 2 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {["No headline", "CTA missing", "No social proof", "8 nav items", "No trust signals", "No pricing"].map((issue) => (
+                      <span key={issue} className="rounded-full border border-red-900/50 bg-red-950/50 px-2 py-0.5 font-mono text-[9px] text-red-400">{issue}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Fix prompts 1 ── */}
+          {demoPhase >= 3 && (
+            <div className="mb-4 ml-16 rounded-lg border border-zinc-700/60 bg-zinc-800/50 px-4 py-3">
+              <div className="mb-2 flex items-center gap-2">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-violet-400"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                <span className="font-mono text-[9px] font-semibold uppercase tracking-wider text-violet-400">Fix prompts applied in Lovable</span>
+              </div>
+              <div className="space-y-1.5">
+                {[
+                  "Add a bold headline above the fold that explains what Spark Insights does",
+                  "Add a primary CTA button: 'Start free trial' visible on load",
+                  "Reduce navigation to 4 items: Product, Pricing, Blog, Sign in",
+                ].map((p) => (
+                  <p key={p} className="flex items-start gap-1.5 font-mono text-[10px] text-zinc-400">
+                    <span className="mt-px shrink-0 text-violet-500">✓</span>
+                    <span className="italic">"{p}"</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Audit 2 ── */}
+          {demoPhase >= 4 && (
+            <div className="flex items-start gap-4">
+              <div className="shrink-0 mt-0.5">
+                {demoPhase === 4 ? (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800 border border-zinc-700">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
+                  </div>
+                ) : (
+                  <div className="flex h-12 w-12 flex-col items-center justify-center rounded-xl bg-amber-500/15 border border-amber-500/30">
+                    <span className="font-mono text-lg font-bold leading-none text-amber-400">42</span>
+                    <span className="font-mono text-[8px] text-amber-500/70">/100</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0 pb-4">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <span className="font-mono text-xs font-semibold text-zinc-300">Audit #2</span>
+                  {demoPhase >= 5 && (
+                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-amber-400 border border-amber-500/20">42 / 100</span>
+                  )}
+                  {demoPhase >= 5 && (
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">+34 pts</span>
+                  )}
+                  {demoPhase === 4 && <span className="font-mono text-[10px] text-zinc-500 animate-pulse">Scanning…</span>}
+                </div>
+                {demoPhase >= 5 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {["Headline ✓", "CTA ✓", "Navigation ✓", "No testimonials", "No trust badges", "No social proof"].map((issue) => (
+                      <span key={issue} className={`rounded-full border px-2 py-0.5 font-mono text-[9px] ${issue.includes("✓") ? "border-emerald-900/50 bg-emerald-950/50 text-emerald-400" : "border-amber-900/50 bg-amber-950/50 text-amber-400"}`}>{issue}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Fix prompts 2 ── */}
+          {demoPhase >= 6 && (
+            <div className="mb-4 ml-16 rounded-lg border border-zinc-700/60 bg-zinc-800/50 px-4 py-3">
+              <div className="mb-2 flex items-center gap-2">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-violet-400"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                <span className="font-mono text-[9px] font-semibold uppercase tracking-wider text-violet-400">Fix prompts applied in Lovable</span>
+              </div>
+              <div className="space-y-1.5">
+                {[
+                  "Add 3 customer testimonials with names, photos, and companies",
+                  "Add a social proof bar: '2,400+ teams use Spark Insights'",
+                  "Add trust badges: SOC 2 compliant, GDPR, Free trial — no credit card",
+                ].map((p) => (
+                  <p key={p} className="flex items-start gap-1.5 font-mono text-[10px] text-zinc-400">
+                    <span className="mt-px shrink-0 text-violet-500">✓</span>
+                    <span className="italic">"{p}"</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Audit 3 ── */}
+          {demoPhase >= 7 && (
+            <div className="flex items-start gap-4">
+              <div className="shrink-0 mt-0.5">
+                {demoPhase === 7 ? (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800 border border-zinc-700">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
+                  </div>
+                ) : (
+                  <div className="flex h-12 w-12 flex-col items-center justify-center rounded-xl bg-emerald-500/15 border border-emerald-500/30">
+                    <span className="font-mono text-lg font-bold leading-none text-emerald-400">76</span>
+                    <span className="font-mono text-[8px] text-emerald-500/70">/100</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <span className="font-mono text-xs font-semibold text-zinc-300">Audit #3</span>
+                  {demoPhase >= 8 && (
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">76 / 100</span>
+                  )}
+                  {demoPhase >= 8 && (
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">+34 pts</span>
+                  )}
+                  {demoPhase === 7 && <span className="font-mono text-[10px] text-zinc-500 animate-pulse">Scanning…</span>}
+                </div>
+                {demoPhase >= 8 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {["Headline ✓", "CTA ✓", "Navigation ✓", "Testimonials ✓", "Trust badges ✓", "Social proof ✓"].map((issue) => (
+                      <span key={issue} className="rounded-full border border-emerald-900/50 bg-emerald-950/50 px-2 py-0.5 font-mono text-[9px] text-emerald-400">{issue}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-zinc-800 px-5 py-3 flex items-start justify-between gap-4">
+          <p className="text-[11px] text-zinc-500 leading-relaxed">
+            This simulates how the score improves after applying fix prompts between audits.{" "}
+            <a href="https://rapyd-spark-insights.lovable.app/" target="_blank" rel="noopener noreferrer" className="text-zinc-400 underline underline-offset-2 hover:text-zinc-200 transition-colors">View the example site ↗</a>
+          </p>
+          {demoPhase === 8 && (
+            <button
+              onClick={() => { setDemoPhase(0); startDemoIteration(); }}
+              className="shrink-0 font-mono text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              ↺ Replay
+            </button>
+          )}
+        </div>
+      </div>
+    )}
+    </>
   );
 
   // ── Loading ───────────────────────────────────────────────────────────────

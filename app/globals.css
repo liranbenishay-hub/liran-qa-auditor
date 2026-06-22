@@ -2,6 +2,63 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Homepage floating builder card animations ──────────────────────────── */
+/* Larger travel + faster durations — visible within 2-3 s, still premium */
+@keyframes builderFloatA {
+  0%,100% { transform: translateY(0px)   translateX(0px)   rotate(0deg);    }
+  40%      { transform: translateY(-36px) translateX(22px)  rotate(1.5deg);  }
+  70%      { transform: translateY(22px)  translateX(-14px) rotate(-0.8deg); }
+}
+@keyframes builderFloatB {
+  0%,100% { transform: translateY(0px)   translateX(0px)   rotate(0deg);    }
+  30%      { transform: translateY(30px)  translateX(-20px) rotate(-1.2deg); }
+  65%      { transform: translateY(-28px) translateX(18px)  rotate(1.0deg);  }
+}
+@keyframes builderFloatC {
+  0%,100% { transform: translateY(0px)   translateX(0px)   rotate(0deg);    }
+  45%      { transform: translateY(-40px) translateX(-24px) rotate(1.8deg);  }
+  75%      { transform: translateY(26px)  translateX(18px)  rotate(-1.0deg); }
+}
+@keyframes builderFloatD {
+  0%,100% { transform: translateY(0px)   translateX(0px)   rotate(0deg);    }
+  35%      { transform: translateY(34px)  translateX(22px)  rotate(-1.4deg); }
+  68%      { transform: translateY(-24px) translateX(-16px) rotate(0.9deg);  }
+}
+@keyframes builderFloatE {
+  0%,100% { transform: translateY(0px)   translateX(0px)   rotate(0deg);    }
+  50%      { transform: translateY(-30px) translateX(-18px) rotate(1.2deg);  }
+  80%      { transform: translateY(20px)  translateX(14px)  rotate(-0.7deg); }
+}
+@keyframes builderFloatF {
+  0%,100% { transform: translateY(0px)   translateX(0px)   rotate(0deg);    }
+  38%      { transform: translateY(38px)  translateX(-22px) rotate(-1.6deg); }
+  72%      { transform: translateY(-26px) translateX(16px)  rotate(1.0deg);  }
+}
+@keyframes builderFloatG {
+  0%,100% { transform: translateY(0px)   translateX(0px)   rotate(0deg);    }
+  42%      { transform: translateY(-28px) translateX(20px)  rotate(0.9deg);  }
+  78%      { transform: translateY(24px)  translateX(-18px) rotate(-1.1deg); }
+}
+
+/* Named classes — faster durations so motion is noticeable within 2-3 s */
+.builder-float-a { animation: builderFloatA 9s  ease-in-out 0s    infinite; }
+.builder-float-b { animation: builderFloatB 11s ease-in-out 1.4s  infinite; }
+.builder-float-c { animation: builderFloatC 12s ease-in-out 3.0s  infinite; }
+.builder-float-d { animation: builderFloatD 10s ease-in-out 0.7s  infinite; }
+.builder-float-e { animation: builderFloatE 8s  ease-in-out 4.2s  infinite; }
+.builder-float-f { animation: builderFloatF 11s ease-in-out 2.1s  infinite; }
+.builder-float-g { animation: builderFloatG 9s  ease-in-out 5.0s  infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .builder-float-a,
+  .builder-float-b,
+  .builder-float-c,
+  .builder-float-d,
+  .builder-float-e,
+  .builder-float-f,
+  .builder-float-g { animation: none; }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

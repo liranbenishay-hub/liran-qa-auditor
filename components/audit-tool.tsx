@@ -1999,9 +1999,15 @@ export default function AuditTool() {
   // so we can render the matching annotation overlay inside the full screenshot.
   const [screenshotModalFinding, setScreenshotModalFinding] = useState<AuditFinding | null>(null);
 
+  // Builder selector — user can pre-select their builder before running audit
+  // null = Auto-detect (uses detection from audit result)
+  const [preferredBuilder, setPreferredBuilder] = useState<string | null>(null);
+
   // Demo iteration mode — simulated progress card
   const [demoOpen, setDemoOpen] = useState(false);
   const [demoPhase, setDemoPhase] = useState(0);
+  // Mounted flag — prevents SSR/client hydration mismatch for client-only elements
+  const [mounted, setMounted] = useState(false);
 
   // Modal zoom/pan state
   const [modalZoom, setModalZoom] = useState(1);
@@ -2019,6 +2025,9 @@ export default function AuditTool() {
     else document.body.style.overflow = "";
     return () => { document.body.style.overflow = ""; };
   }, [drawerOpen, evidenceDrawerOpen, screenshotModalOpen]);
+
+  // Mark as client-mounted — gates any client-only rendering to avoid hydration mismatch
+  useEffect(() => { setMounted(true); }, []);
 
   // Esc closes screenshot modal
   useEffect(() => {
@@ -2101,11 +2110,42 @@ export default function AuditTool() {
     return t && !t.startsWith("http") ? `https://${t}` : t;
   }
 
+  /**
+   * Returns true only for inputs that look like real website URLs.
+   * Rejects: random text, terminal commands, strings with spaces, no-dot hostnames.
+   */
+  function isValidAuditUrl(raw: string): boolean {
+    const t = raw.trim();
+    if (!t) return false;
+    // Spaces anywhere in the raw input immediately disqualify (catches "npm run dev" etc.)
+    if (/\s/.test(t)) return false;
+    // Must be parseable as a URL after optional https:// prepend
+    try {
+      const withProto = t.startsWith("http://") || t.startsWith("https://") ? t : `https://${t}`;
+      const u = new URL(withProto);
+      const host = u.hostname.toLowerCase();
+      // Must contain at least one dot  (rejects bare words like "localhost", "npm", "git")
+      if (!host.includes(".")) return false;
+      // Each hostname label: only letters, digits, hyphens; no empty labels
+      const labels = host.split(".");
+      if (!labels.every((l) => l.length > 0 && /^[a-z0-9-]+$/.test(l))) return false;
+      // TLD must be at least 2 chars
+      if (labels[labels.length - 1].length < 2) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function runAudit(urlOverride?: string) {
     const raw = urlOverride ?? url;
     if (urlOverride) setUrl(urlOverride);
+    if (!isValidAuditUrl(raw)) {
+      setError("Enter a valid website URL to audit.");
+      return;
+    }
     const norm = normalise(raw);
-    if (!norm) { setError("Enter a URL to audit."); return; }
+    if (!norm) { setError("Enter a valid website URL to audit."); return; }
     setError("");
     setAuditState("loading");
     setApiData(null);
@@ -2287,8 +2327,10 @@ export default function AuditTool() {
 
   function openDrawer(finding: AuditFinding) {
     setSelectedFinding(finding);
-    const recommended = getRecommendedTab(result?.detectedBuilder ?? null);
-    setActiveTab(recommended ?? "generic");
+    // preferredBuilder (user-selected) takes precedence over auto-detected builder
+    const tabFromPreferred = preferredBuilder ? getRecommendedTab(preferredBuilder) : null;
+    const tabFromDetected = getRecommendedTab(result?.detectedBuilder ?? null);
+    setActiveTab(tabFromPreferred ?? tabFromDetected ?? "generic");
     setDrawerOpen(true);
     setCopiedPrompt(null);
     // Mutually exclusive with evidence drawer
@@ -2322,93 +2364,235 @@ export default function AuditTool() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  // ── Idle — Google-style centered homepage ────────────────────────────────
+  // ── Idle — premium centered homepage ─────────────────────────────────────
   if (auditState === "idle") return (
     <>
-    {/* ── Clean centered homepage ───────────────────────────────────────── */}
-    <div className="flex min-h-[82vh] flex-col items-center justify-center px-4 py-20 text-center">
+    {/* ── Hero ─────────────────────────────────────────────────────────────── */}
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 pb-32 pt-48 text-center">
 
-      {/* Brand pill */}
-      <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-1.5 shadow-sm">
-        <span className="h-1.5 w-1.5 rounded-full bg-zinc-800" />
-        <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">AI Builder</span>
-      </div>
+      {/* ── Floating builder card ecosystem — client-only to avoid hydration mismatch ── */}
+      {mounted && (
+        <>
+        {/* Inject keyframes directly — guarantees animation regardless of Tailwind processing */}
+        <style dangerouslySetInnerHTML={{__html:`
+          @keyframes builderFloatA{0%,100%{transform:translateY(0px) translateX(0px) rotate(0deg)}40%{transform:translateY(-36px) translateX(22px) rotate(1.5deg)}70%{transform:translateY(22px) translateX(-14px) rotate(-0.8deg)}}
+          @keyframes builderFloatB{0%,100%{transform:translateY(0px) translateX(0px) rotate(0deg)}30%{transform:translateY(30px) translateX(-20px) rotate(-1.2deg)}65%{transform:translateY(-28px) translateX(18px) rotate(1deg)}}
+          @keyframes builderFloatC{0%,100%{transform:translateY(0px) translateX(0px) rotate(0deg)}45%{transform:translateY(-40px) translateX(-24px) rotate(1.8deg)}75%{transform:translateY(26px) translateX(18px) rotate(-1deg)}}
+          @keyframes builderFloatD{0%,100%{transform:translateY(0px) translateX(0px) rotate(0deg)}35%{transform:translateY(34px) translateX(22px) rotate(-1.4deg)}68%{transform:translateY(-24px) translateX(-16px) rotate(0.9deg)}}
+          @keyframes builderFloatE{0%,100%{transform:translateY(0px) translateX(0px) rotate(0deg)}50%{transform:translateY(-30px) translateX(-18px) rotate(1.2deg)}80%{transform:translateY(20px) translateX(14px) rotate(-0.7deg)}}
+          @keyframes builderFloatF{0%,100%{transform:translateY(0px) translateX(0px) rotate(0deg)}38%{transform:translateY(38px) translateX(-22px) rotate(-1.6deg)}72%{transform:translateY(-26px) translateX(16px) rotate(1deg)}}
+          @keyframes builderFloatG{0%,100%{transform:translateY(0px) translateX(0px) rotate(0deg)}42%{transform:translateY(-28px) translateX(20px) rotate(0.9deg)}78%{transform:translateY(24px) translateX(-18px) rotate(-1.1deg)}}
+          .builder-float-a{animation:builderFloatA 9s ease-in-out 0s infinite}
+          .builder-float-b{animation:builderFloatB 11s ease-in-out 1.4s infinite}
+          .builder-float-c{animation:builderFloatC 12s ease-in-out 3s infinite}
+          .builder-float-d{animation:builderFloatD 10s ease-in-out 0.7s infinite}
+          .builder-float-e{animation:builderFloatE 8s ease-in-out 4.2s infinite}
+          .builder-float-f{animation:builderFloatF 11s ease-in-out 2.1s infinite}
+          .builder-float-g{animation:builderFloatG 9s ease-in-out 5s infinite}
+          @media(prefers-reduced-motion:reduce){.builder-float-a,.builder-float-b,.builder-float-c,.builder-float-d,.builder-float-e,.builder-float-f,.builder-float-g{animation:none}}
+        `}} />
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 select-none">
 
-      {/* Headline */}
-      <h1 className="mb-4 max-w-2xl text-4xl font-bold tracking-tight text-zinc-900 sm:text-[52px] sm:leading-tight">
-        AI Website<br className="hidden sm:block" /> Iteration Coach
-      </h1>
+          {/* ── Lovable — upper-left ── */}
+          <div className="builder-float-a" style={{ position:"absolute", top:"10%", left:"3%", width:152, opacity:0.22 }}>
+            <div style={{ background:"rgba(255,255,255,0.88)", border:"1px solid rgba(0,0,0,0.07)", borderRadius:14, padding:"14px 16px", boxShadow:"0 4px 20px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04)", backdropFilter:"blur(8px)" }}>
+              <div style={{ width:32, height:32, borderRadius:8, background:"linear-gradient(135deg,#8b5cf6,#6d28d9)", marginBottom:10 }} />
+              <p style={{ fontSize:14, fontWeight:700, color:"#18181b", margin:0, fontFamily:"inherit", letterSpacing:"-0.01em" }}>Lovable</p>
+              <p style={{ fontSize:11, color:"#a1a1aa", margin:"3px 0 0", fontFamily:"monospace" }}>Visual builder</p>
+            </div>
+          </div>
 
-      {/* Subtitle */}
-      <p className="mb-10 max-w-md text-base leading-relaxed text-zinc-500 sm:text-lg">
-        Get actionable feedback, visual evidence, and builder-ready prompts for AI-generated websites.
-      </p>
+          {/* ── Claude — upper-right ── */}
+          <div className="builder-float-b" style={{ position:"absolute", top:"8%", right:"3%", width:148, opacity:0.20 }}>
+            <div style={{ background:"rgba(255,255,255,0.88)", border:"1px solid rgba(0,0,0,0.07)", borderRadius:14, padding:"14px 16px", boxShadow:"0 4px 20px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04)", backdropFilter:"blur(8px)" }}>
+              <div style={{ width:32, height:32, borderRadius:8, background:"linear-gradient(135deg,#f97316,#ea580c)", marginBottom:10 }} />
+              <p style={{ fontSize:14, fontWeight:700, color:"#18181b", margin:0, fontFamily:"inherit", letterSpacing:"-0.01em" }}>Claude</p>
+              <p style={{ fontSize:11, color:"#a1a1aa", margin:"3px 0 0", fontFamily:"monospace" }}>AI builder</p>
+            </div>
+          </div>
 
-      {/* URL input + CTA */}
-      <div className="w-full max-w-[560px]">
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <input
-            type="text"
-            value={url}
-            onChange={(e) => { setUrl(e.target.value); setError(""); }}
-            onKeyDown={(e) => { if (e.key === "Enter") runAudit(); }}
-            placeholder="https://myapp.lovable.app"
-            className={`flex-1 rounded-xl border px-5 py-4 text-base text-zinc-900 shadow-sm placeholder:text-zinc-300 outline-none transition-all focus:ring-2 focus:ring-zinc-900/10 ${error ? "border-red-300 bg-red-50" : "border-zinc-200 hover:border-zinc-300 focus:border-zinc-400"}`}
-            autoFocus
-          />
-          <button
-            onClick={() => runAudit()}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-zinc-900 px-7 py-4 text-base font-semibold text-white shadow-sm transition-colors hover:bg-zinc-700 active:scale-[0.98]"
+          {/* ── Base44 — mid-left ── */}
+          <div className="builder-float-c" style={{ position:"absolute", top:"42%", left:"2%", width:150, opacity:0.18 }}>
+            <div style={{ background:"rgba(255,255,255,0.88)", border:"1px solid rgba(0,0,0,0.07)", borderRadius:14, padding:"14px 16px", boxShadow:"0 4px 20px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04)", backdropFilter:"blur(8px)" }}>
+              <div style={{ width:32, height:32, borderRadius:8, background:"linear-gradient(135deg,#3b82f6,#1d4ed8)", marginBottom:10 }} />
+              <p style={{ fontSize:14, fontWeight:700, color:"#18181b", margin:0, fontFamily:"inherit", letterSpacing:"-0.01em" }}>Base44</p>
+              <p style={{ fontSize:11, color:"#a1a1aa", margin:"3px 0 0", fontFamily:"monospace" }}>App builder</p>
+            </div>
+          </div>
+
+          {/* ── Cursor — mid-right ── */}
+          <div className="builder-float-d" style={{ position:"absolute", top:"38%", right:"2%", width:148, opacity:0.20 }}>
+            <div style={{ background:"rgba(255,255,255,0.88)", border:"1px solid rgba(0,0,0,0.07)", borderRadius:14, padding:"14px 16px", boxShadow:"0 4px 20px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04)", backdropFilter:"blur(8px)" }}>
+              <div style={{ width:32, height:32, borderRadius:8, background:"linear-gradient(135deg,#27272a,#18181b)", marginBottom:10 }} />
+              <p style={{ fontSize:14, fontWeight:700, color:"#18181b", margin:0, fontFamily:"inherit", letterSpacing:"-0.01em" }}>Cursor</p>
+              <p style={{ fontSize:11, color:"#a1a1aa", margin:"3px 0 0", fontFamily:"monospace" }}>AI IDE</p>
+            </div>
+          </div>
+
+          {/* ── Bolt — lower-left ── */}
+          <div className="builder-float-e" style={{ position:"absolute", bottom:"18%", left:"3%", width:144, opacity:0.17 }}>
+            <div style={{ background:"rgba(255,255,255,0.88)", border:"1px solid rgba(0,0,0,0.07)", borderRadius:14, padding:"14px 16px", boxShadow:"0 4px 20px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04)", backdropFilter:"blur(8px)" }}>
+              <div style={{ width:32, height:32, borderRadius:8, background:"linear-gradient(135deg,#f59e0b,#d97706)", marginBottom:10 }} />
+              <p style={{ fontSize:14, fontWeight:700, color:"#18181b", margin:0, fontFamily:"inherit", letterSpacing:"-0.01em" }}>Bolt</p>
+              <p style={{ fontSize:11, color:"#a1a1aa", margin:"3px 0 0", fontFamily:"monospace" }}>Web builder</p>
+            </div>
+          </div>
+
+          {/* ── v0 — lower-right ── */}
+          <div className="builder-float-f" style={{ position:"absolute", bottom:"16%", right:"3%", width:140, opacity:0.22 }}>
+            <div style={{ background:"rgba(255,255,255,0.88)", border:"1px solid rgba(0,0,0,0.07)", borderRadius:14, padding:"14px 16px", boxShadow:"0 4px 20px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04)", backdropFilter:"blur(8px)" }}>
+              <div style={{ width:32, height:32, borderRadius:8, background:"linear-gradient(135deg,#18181b,#09090b)", marginBottom:10 }} />
+              <p style={{ fontSize:14, fontWeight:700, color:"#18181b", margin:0, fontFamily:"inherit", letterSpacing:"-0.01em" }}>v0</p>
+              <p style={{ fontSize:11, color:"#a1a1aa", margin:"3px 0 0", fontFamily:"monospace" }}>UI generator</p>
+            </div>
+          </div>
+
+          {/* ── Replit — upper-center-right ── */}
+          <div className="builder-float-g" style={{ position:"absolute", top:"19%", right:"19%", width:146, opacity:0.14 }}>
+            <div style={{ background:"rgba(255,255,255,0.88)", border:"1px solid rgba(0,0,0,0.07)", borderRadius:14, padding:"14px 16px", boxShadow:"0 4px 20px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04)", backdropFilter:"blur(8px)" }}>
+              <div style={{ width:32, height:32, borderRadius:8, background:"linear-gradient(135deg,#f97316,#dc2626)", marginBottom:10 }} />
+              <p style={{ fontSize:14, fontWeight:700, color:"#18181b", margin:0, fontFamily:"inherit", letterSpacing:"-0.01em" }}>Replit</p>
+              <p style={{ fontSize:11, color:"#a1a1aa", margin:"3px 0 0", fontFamily:"monospace" }}>AI builder</p>
+            </div>
+          </div>
+
+        </div>
+        </>
+      )}
+
+      {/* ── Soft radial glow behind headline ── */}
+      <div
+        aria-hidden="true"
+        style={{
+          position:"absolute", top:"30%", left:"50%",
+          transform:"translateX(-50%)",
+          width:800, height:420,
+          background:"radial-gradient(ellipse at center, rgba(99,102,241,0.06) 0%, rgba(139,92,246,0.03) 45%, transparent 72%)",
+          pointerEvents:"none", zIndex:0,
+        }}
+      />
+
+      {/* ── Content — above background ── */}
+      <div className="relative z-10 flex flex-col items-center">
+
+        {/* Badge */}
+        <div className="mb-9 inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/90 px-4 py-1.5 shadow-sm backdrop-blur-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-zinc-700" />
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">AI Builder QA</span>
+        </div>
+
+        {/* Headline */}
+        <h1
+          className="mb-5 max-w-[680px] text-[42px] font-bold leading-[1.06] text-zinc-950 sm:text-[64px]"
+          style={{ letterSpacing:"-0.03em" }}
+        >
+          Find what to fix next.
+        </h1>
+
+        {/* Subtitle */}
+        <p className="mb-11 max-w-[500px] text-[17px] leading-relaxed text-zinc-400">
+          Paste your AI-built site. Get visual evidence and exact prompts for Lovable, Claude, Base44, Cursor, Bolt, v0 and Replit.
+        </p>
+
+        {/* ── URL input + CTA ── */}
+        <div className="w-full max-w-[580px]">
+          <div
+            className={`flex flex-col overflow-hidden rounded-2xl border bg-white shadow-md transition-all sm:flex-row ${
+              error ? "border-red-300" : "border-zinc-200 focus-within:border-zinc-400 focus-within:shadow-lg"
+            }`}
           >
-            Analyze Website →
+            <input
+              type="text"
+              value={url}
+              onChange={(e) => { setUrl(e.target.value); setError(""); }}
+              onKeyDown={(e) => { if (e.key === "Enter") runAudit(); }}
+              placeholder="https://myapp.lovable.app"
+              className={`flex-1 bg-transparent px-5 py-4 text-base text-zinc-900 outline-none placeholder:text-zinc-300 ${error ? "bg-red-50" : ""}`}
+              suppressHydrationWarning
+            />
+            <div className="shrink-0 p-1.5">
+              <button
+                onClick={() => runAudit()}
+                className="w-full rounded-xl bg-zinc-950 px-6 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-zinc-800 active:scale-[0.98] sm:w-auto"
+              >
+                Find what to fix
+              </button>
+            </div>
+          </div>
+          {error && <p className="mt-2 text-left text-sm text-red-500">{error}</p>}
+        </div>
+
+        {/* ── Builder selector ── */}
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+          <span className="font-mono text-[11px] text-zinc-400">Built with</span>
+          <div className="relative">
+            <select
+              value={preferredBuilder ?? ""}
+              onChange={(e) => setPreferredBuilder(e.target.value || null)}
+              className="cursor-pointer appearance-none rounded-full border border-zinc-200 bg-white py-1.5 pl-3.5 pr-8 font-mono text-[12px] text-zinc-600 transition-colors hover:border-zinc-400 focus:outline-none focus:border-zinc-400"
+            >
+              <option value="">Auto-detect</option>
+              <option value="lovable">Lovable</option>
+              <option value="base44">Base44</option>
+              <option value="claude">Claude</option>
+              <option value="cursor">Cursor</option>
+              <option value="bolt">Bolt</option>
+              <option value="v0">v0</option>
+              <option value="replit">Replit</option>
+            </select>
+            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400" aria-hidden="true">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6"/></svg>
+            </span>
+          </div>
+          {preferredBuilder && (
+            <span className="font-mono text-[11px] text-zinc-400">
+              We&apos;ll prioritize fix prompts for this builder.
+            </span>
+          )}
+        </div>
+
+        {/* ── Mini-flow ── */}
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-x-1 gap-y-2">
+          {[
+            { step: "Paste URL", icon: "↓" },
+            { step: "Analyze", icon: "→" },
+            { step: "Get fixes", icon: "→" },
+            { step: "Send to builder", icon: null },
+          ].map(({ step, icon }) => (
+            <span key={step} className="flex items-center gap-1">
+              <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 font-mono text-[11px] text-zinc-500">{step}</span>
+              {icon && <span className="font-mono text-[11px] text-zinc-300">{icon}</span>}
+            </span>
+          ))}
+        </div>
+
+        {/* Trust + secondary actions */}
+        <div className="mt-9 flex flex-wrap items-center justify-center gap-4 sm:gap-6">
+          <button
+            onClick={viewExampleAudit}
+            className="inline-flex items-center gap-2 text-sm font-medium text-zinc-500 transition-colors hover:text-zinc-800"
+          >
+            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-zinc-300 bg-white shadow-sm">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="9,7 17,12 9,17"/></svg>
+            </span>
+            See example audit
+          </button>
+          <span className="text-zinc-200">·</span>
+          <button
+            onClick={startDemoIteration}
+            className="inline-flex items-center gap-1.5 text-sm text-zinc-400 transition-colors hover:text-zinc-600"
+          >
+            See score improve over 3 iterations
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </button>
         </div>
-        {error && <p className="mt-2 text-left text-sm text-red-500">{error}</p>}
+
+        {/* Fine print */}
+        <p className="mt-10 font-mono text-[10px] text-zinc-300">
+          No signup required · Analyzes real page content · No data stored
+        </p>
+
       </div>
-
-      {/* Builder chips */}
-      <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
-        {["Lovable", "Claude", "Base44", "Bolt", "v0", "Replit"].map((b) => (
-          <span
-            key={b}
-            className="rounded-full border border-zinc-200 bg-white px-3 py-1 font-mono text-[11px] text-zinc-500 shadow-sm"
-          >
-            {b}
-          </span>
-        ))}
-      </div>
-
-      {/* Trust statement */}
-      <p className="mt-4 text-sm text-zinc-400">
-        Works alongside your favorite AI website builder.{" "}
-        <span className="text-zinc-500 font-medium">No signup required.</span>
-      </p>
-
-      {/* Secondary actions */}
-      <div className="mt-9 flex flex-wrap items-center justify-center gap-3 sm:gap-6">
-        <button
-          onClick={viewExampleAudit}
-          className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-5 py-2.5 text-sm font-medium text-zinc-700 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10"/><polygon points="10,8 16,12 10,16"/>
-          </svg>
-          View Example Audit
-        </button>
-        <button
-          onClick={startDemoIteration}
-          className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-zinc-600"
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
-          See iteration demo
-        </button>
-      </div>
-
-      {/* Fine print */}
-      <p className="mt-8 font-mono text-[10px] text-zinc-300">
-        Not a website builder · Works with sites built on Lovable, Claude, Base44, Bolt, v0, Replit
-      </p>
-
     </div>
 
     {/* ── Demo Iteration Card ─────────────────────────────────────── */}
@@ -2644,7 +2828,7 @@ export default function AuditTool() {
 
     return (
       <>
-        <div ref={resultRef} className="space-y-5">
+        <div ref={resultRef} className="mx-auto max-w-[1200px] space-y-5 py-10 sm:py-14">
 
           {/* Actions bar */}
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3033,8 +3217,13 @@ export default function AuditTool() {
 
         {/* ── Fix Prompt Drawer ─────────────────────────────────────────────── */}
         {drawerOpen && selectedFinding && fixPrompts && (() => {
-          const recommendedTab = getRecommendedTab(result?.detectedBuilder ?? null);
+          // preferredBuilder (user-selected) takes precedence over auto-detected
+          const tabFromPreferred = preferredBuilder ? getRecommendedTab(preferredBuilder) : null;
+          const tabFromDetected = getRecommendedTab(result?.detectedBuilder ?? null);
+          const recommendedTab: ToolId | null = tabFromPreferred ?? tabFromDetected;
+          const isUserSelected = !!tabFromPreferred;
           const hasDetectedBuilder = !!result?.detectedBuilder;
+          const showRecommendedCallout = !!recommendedTab;
 
           // Dynamically reorder tabs: recommended tab appears first
           const ALL_TABS: ToolId[] = ["lovable", "base44", "claude", "cursor", "generic"];
@@ -3086,16 +3275,19 @@ export default function AuditTool() {
                 </div>
 
                 {/* ── Builder callout ───────────────────────────────────────── */}
-                {hasDetectedBuilder ? (
+                {showRecommendedCallout ? (
                   <div className="shrink-0 border-b border-zinc-800 bg-violet-950/50 px-5 py-2.5">
                     <div className="flex items-start gap-2.5">
                       <span className="mt-px shrink-0 text-sm leading-none">⚡</span>
                       <div>
                         <p className="text-xs font-semibold text-violet-100">
-                          Recommended builder: {result?.detectedBuilder}
+                          {isUserSelected
+                            ? `You selected: ${preferredBuilder!.charAt(0).toUpperCase() + preferredBuilder!.slice(1)}`
+                            : `Detected builder: ${result?.detectedBuilder}`}
                         </p>
                         <p className="mt-0.5 text-[11px] text-violet-400">
-                          The <span className="text-violet-200">{recommendedTab ? TOOL_LABELS[recommendedTab] : result?.detectedBuilder}</span> tab is pre-selected with a prompt tailored for this builder.
+                          The <span className="text-violet-200">{recommendedTab ? TOOL_LABELS[recommendedTab] : ""}</span> tab is{" "}
+                          {isUserSelected ? "first — matching your selection." : "pre-selected with a prompt tailored for this builder."}
                         </p>
                       </div>
                     </div>
@@ -3114,7 +3306,7 @@ export default function AuditTool() {
                 {/* ── Tabs ─────────────────────────────────────────────────── */}
                 <div className="flex shrink-0 overflow-x-auto border-b border-zinc-800 px-4 pt-1 scrollbar-none">
                   {orderedTabs.map((tool) => {
-                    const isRecommended = tool === recommendedTab && hasDetectedBuilder;
+                    const isRecommended = tool === recommendedTab && showRecommendedCallout;
                     const tooltipText = isRecommended ? RECOMMENDED_TOOLTIP[tool] : null;
                     return (
                       <div key={tool} className="group relative shrink-0">
@@ -3393,34 +3585,37 @@ export default function AuditTool() {
               ">
 
                 {/* ── Header ─────────────────────────────────────────────────── */}
-                <div className="flex shrink-0 items-start justify-between border-b border-zinc-100 px-5 py-4">
-                  <div className="min-w-0 mr-4">
-                    <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                        Evidence
-                      </span>
+                <div className="shrink-0 border-b border-zinc-100 px-5 pb-4 pt-4">
+                  {/* Top row: meta badges + close */}
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] font-semibold ${cfg.badge}`}>
                         <span className={`h-1 w-1 rounded-full ${cfg.dot}`} />
                         {cfg.label}
                       </span>
                       <span className="font-mono text-[10px] text-zinc-400">{evidenceFinding.category}</span>
                       <span className={`rounded px-1.5 py-px font-mono text-[9px] font-semibold ${ev.dataSource === "real" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-                        {ev.dataSource === "real" ? "✓ Live page data" : "⚠ Heuristic"}
+                        {ev.dataSource === "real" ? "✓ Live data" : "⚠ Heuristic"}
                       </span>
                     </div>
-                    <p className="text-sm font-semibold leading-snug text-zinc-900 line-clamp-3">
-                      {evidenceFinding.issue}
-                    </p>
+                    <button
+                      onClick={() => setEvidenceDrawerOpen(false)}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-400 transition-colors hover:border-zinc-400 hover:text-zinc-700"
+                      aria-label="Close"
+                    >
+                      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
                   </div>
-                  <button
-                    onClick={() => setEvidenceDrawerOpen(false)}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-400 transition-colors hover:border-zinc-400 hover:text-zinc-700"
-                    aria-label="Close"
-                  >
-                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                  {/* Large prominent issue title */}
+                  <h2 className="mb-2 text-xl font-bold leading-snug text-zinc-900">
+                    {evidenceFinding.issue}
+                  </h2>
+                  {/* Explanation — immediately visible, no scroll needed */}
+                  <p className="text-sm leading-relaxed text-zinc-600">
+                    {evidenceFinding.whyItMatters}
+                  </p>
                 </div>
 
                 {/* ── Scrollable body ─────────────────────────────────────────── */}
@@ -3432,10 +3627,10 @@ export default function AuditTool() {
                       <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
                         Visual focus
                       </p>
-                      {/* Screenshot container — 280px high shows a readable portion of the page */}
+                      {/* Screenshot container — 360px shows a clear, readable portion of the page */}
                       <div
-                        className="relative overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100"
-                        style={{ height: 280 }}
+                        className="relative overflow-hidden rounded-xl border-2 border-zinc-200 bg-zinc-100 shadow-sm"
+                        style={{ height: 360 }}
                       >
                         {screenshotBase64 ? (
                           /* ── Real screenshot — shown whenever base64 data is available ── */
@@ -3762,7 +3957,7 @@ function AnnotationOverlay({
               width: `${r.width}%`,
               height: `${r.height}%`,
               background: fill,
-              border: `${isFullPage ? 2 : 3}px solid ${borderColor}`,
+              border: `${isFullPage ? 2 : 3.5}px solid ${borderColor}`,
               borderRadius: 8,
               boxShadow: isFullPage ? "none" : pc.shadow,
               transition: "background 150ms",
@@ -3773,34 +3968,35 @@ function AnnotationOverlay({
             onMouseEnter={() => setHoveredIdx(i)}
             onMouseLeave={() => setHoveredIdx(null)}
           >
-            {/* Always-visible label chip */}
-            <div style={{ position: "absolute", top: 6, left: 6, maxWidth: "calc(100% - 12px)" }}>
+            {/* Always-visible label chip — larger and high contrast */}
+            <div style={{ position: "absolute", top: 7, left: 7, maxWidth: "calc(100% - 14px)" }}>
               <span
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: 5,
-                  borderRadius: 5,
-                  border: `1px solid ${pc.chipBorder}`,
+                  gap: 6,
+                  borderRadius: 6,
+                  border: `1.5px solid ${pc.chipBorder}`,
                   background: pc.chipBg,
-                  padding: "3px 7px",
+                  padding: "4px 9px",
                   fontFamily: "monospace",
-                  fontSize: 9,
+                  fontSize: 11,
                   fontWeight: 700,
                   color: pc.chipText,
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
-                  backdropFilter: "blur(4px)",
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.22)",
+                  backdropFilter: "blur(6px)",
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   maxWidth: "100%",
+                  letterSpacing: "0.01em",
                 }}
               >
                 <span
                   style={{
                     display: "inline-block",
-                    width: 6,
-                    height: 6,
+                    width: 7,
+                    height: 7,
                     borderRadius: "50%",
                     background: pc.dot,
                     flexShrink: 0,

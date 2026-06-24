@@ -13,6 +13,7 @@ import {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type AuditState = "idle" | "loading" | "results";
+type AuditStatus = "success" | "partial" | "failed";
 type SiteType = "saas" | "ecommerce" | "devtool" | "portfolio" | "enterprise" | "marketplace" | "landing" | "ai-builder";
 type Priority = "urgent" | "important" | "later";
 type Category =
@@ -37,6 +38,10 @@ interface AuditFinding {
   suggestedFix: string;
   effort: Effort;
   impact: Impact;
+  /** What was actually detected on the page (FOUND card in Evidence Drawer) */
+  found?: string;
+  /** What the system expected to see (EXPECTED card in Evidence Drawer) */
+  expected?: string;
 }
 
 interface AuditResult {
@@ -50,6 +55,10 @@ interface AuditResult {
   findings: AuditFinding[];
   /** Will hold a screenshot data-URL or CDN URL once capture is implemented */
   screenshotUrl?: string;
+  /** Audit quality: success = full DOM inspection, partial = thin data, failed = page unreachable */
+  auditStatus: AuditStatus;
+  /** Human-readable fetch error shown in the FAILED state */
+  fetchError?: string;
 }
 
 type FixPrompts = Record<ToolId, string>;
@@ -1581,6 +1590,25 @@ function buildAuditResult(url: string): AuditResult {
     bestQuickWin: quickWin?.issue ?? allFindings[0]?.issue ?? "See findings below",
     mainProductRisk: urgent.find((f) => f.category === "Conversion" || f.category === "Product Clarity")?.issue ?? urgent[0]?.issue ?? "Review full findings",
     findings: allFindings,
+    auditStatus: "success" as AuditStatus,
+  };
+}
+
+/** Creates a minimal AuditResult representing a failed fetch — no findings shown. */
+function buildFailedAuditResult(url: string, fetchError: string): AuditResult {
+  let domain = url;
+  try { domain = new URL(url.startsWith("http") ? url : `https://${url}`).hostname.replace("www.", ""); } catch { /* keep raw */ }
+  return {
+    domain,
+    siteType: "Unknown",
+    detectedBuilder: null,
+    overallScore: 0,
+    topUrgentIssue: "",
+    bestQuickWin: "",
+    mainProductRisk: "",
+    findings: [],
+    auditStatus: "failed",
+    fetchError,
   };
 }
 
@@ -1639,6 +1667,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "A missing title tag means the product has no identity in search results, browser tabs, or shared links. The first thing a user sees about your product is blank.",
       suggestedFix: "Add a <title> tag with the product name and a short value statement. e.g. 'ProductName — [what it does in 5 words]'. Keep it under 60 characters.",
       effort: "Low", impact: "High",
+      found: "No <title> tag found in the page head.",
+      expected: "A title tag with the product name and a short value statement (20–60 characters).",
     });
   } else if (data.title.length < 20 && !isOfficialSite && !skipMarketingChecks) {
     findings.push({
@@ -1647,6 +1677,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "A title under 20 characters cannot communicate what the product does or who it is for. Users scanning search results will not know why to click.",
       suggestedFix: `Expand the title: "${data.title} — [what it does] for [who]". Make the value visible before the user even clicks.`,
       effort: "Low", impact: "High",
+      found: `Title tag: "${data.title}" · ${data.title.length} characters.`,
+      expected: "A title of 20–60 characters that names the product and describes its value.",
     });
   } else if (data.title.length > 70) {
     findings.push({
@@ -1655,6 +1687,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Titles longer than 60 characters are truncated in Google, Slack, and most social previews. The part that matters most may never be read.",
       suggestedFix: "Trim to under 60 characters. Put the product name and primary value first. Cut anything that appears after the first value statement.",
       effort: "Low", impact: "Low",
+      found: `Title tag: "${data.title.slice(0, 55)}…" · ${data.title.length} characters.`,
+      expected: "A title under 60 characters so it renders in full across search and social previews.",
     });
   }
 
@@ -1665,6 +1699,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Without a meta description, search engines and social platforms auto-generate preview text — usually a random sentence from the page. The first controlled impression of your product is lost.",
       suggestedFix: "Write a 120–155 character meta description that leads with the user outcome: 'Stop doing [painful thing]. [Product] helps [user type] achieve [goal] in [timeframe].'",
       effort: "Low", impact: "High",
+      found: "No meta description tag detected.",
+      expected: "A 120–155 character description leading with the user outcome.",
     });
   } else if (data.description.length < 50) {
     findings.push({
@@ -1673,6 +1709,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "A meta description under 50 characters cannot communicate context or value. Users scanning results cannot tell if this product is relevant to them.",
       suggestedFix: "Expand to 120–155 characters. Describe the user problem, the solution, and the audience. Lead with what changes for the user, not what the product does.",
       effort: "Low", impact: "Medium",
+      found: `Meta description: "${data.description}" · ${data.description.length} characters.`,
+      expected: "A description of 120–155 characters that communicates context, audience, and value.",
     });
   }
 
@@ -1683,6 +1721,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Without an H1, there is no primary message for users or search engines to anchor to. New visitors have no single statement to evaluate whether the product is for them.",
       suggestedFix: "Add one H1 that states the core user outcome — not the product feature. 'Finally, [outcome] without [pain]' is more powerful than '[Product] is the platform for [category]'.",
       effort: "Low", impact: "High",
+      found: "0 H1 tags detected on the page.",
+      expected: "One primary H1 stating the core user outcome or product value.",
     });
   } else if (data.h1Tags.length > 3) {
     findings.push({
@@ -1691,6 +1731,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Multiple H1s mean the product is trying to say too many things at once. Users cannot identify the single most important reason to keep reading.",
       suggestedFix: "Keep one H1 as the definitive statement of the product's value. Demote the rest to H2 or H3. The primary headline should be the last thing you cut.",
       effort: "Low", impact: "Medium",
+      found: `${data.h1Tags.length} H1 tags detected: ${data.h1Tags.slice(0, 2).map(t => `"${t.slice(0, 40)}"`).join(", ")}.`,
+      expected: "1–2 H1 tags maximum — one definitive statement that anchors the page.",
     });
   }
 
@@ -1701,6 +1743,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Fewer than 80 words cannot explain what the product does, who it is for, and why it matters. Users leave when they cannot answer these three questions quickly.",
       suggestedFix: "Add a clear product narrative: the problem, who has it, and how the product solves it. 200–300 words of well-structured copy outperforms any visual on a product page.",
       effort: "Medium", impact: "High",
+      found: `${data.wordCount} words of readable content detected on the page.`,
+      expected: "At least 200 words to explain the product, audience, and value proposition.",
     });
   }
 
@@ -1714,6 +1758,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "A product page without a call to action is a dead end. Users arrive with intent, find no way to proceed, and leave. Conversion rate is zero until this is fixed.",
       suggestedFix: "Add one dominant action above the fold. It should describe the outcome, not the mechanic: 'Start building free', not 'Sign up'. Every other action on the page should be secondary to this one.",
       effort: "Low", impact: "High",
+      found: "0 buttons and 0 recognizable action elements detected on the page.",
+      expected: "At least one prominent action button above the fold with outcome-based copy.",
     });
   } else if (data.ctaElements.length === 0) {
     findings.push({
@@ -1722,6 +1768,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Generic button labels like 'Submit', 'Click here', or 'Learn more' don't give users a reason to act. They describe the mechanic, not the outcome.",
       suggestedFix: "Replace all generic button text with outcome-based copy: 'Get started free', 'See how it works', 'Start your first audit'. The user should know exactly what happens next.",
       effort: "Low", impact: "High",
+      found: `${data.buttons.total} button${data.buttons.total !== 1 ? "s" : ""} found · none match activation patterns.`,
+      expected: "Button text that describes the user outcome, not the mechanic (e.g. 'Get started free').",
     });
   }
 
@@ -1732,6 +1780,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "B2B and SaaS buyers make purchase decisions on their own before ever talking to sales. Hiding pricing forces a sales call that up to 60% of qualified buyers will not book.",
       suggestedFix: "Add a pricing page or at minimum a starting price. If pricing is variable, show a floor ('Starting at $X') or a ROI statement ('Save 10+ hours per week'). Let buyers disqualify themselves.",
       effort: "Medium", impact: "High",
+      found: "No pricing, plan, or cost indicators detected on the page.",
+      expected: "Visible pricing or at minimum a starting price so buyers can self-qualify.",
     });
   }
 
@@ -1742,6 +1792,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Users who are ready to try the product right now have nowhere to go. Requiring contact with sales adds a 24–72 hour delay to the activation moment — most users don't wait.",
       suggestedFix: "Add a self-service activation path: free trial, demo, sandbox, or waitlist. Show this option prominently. Reduce friction between 'I'm interested' and 'I'm using it'.",
       effort: "Medium", impact: "High",
+      found: "No sign-up, registration, or trial start flow detected.",
+      expected: "A self-service activation path: free trial, demo, sandbox, or waitlist.",
     });
   }
 
@@ -1755,6 +1807,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Forms without directional context have low completion rates. Users don't know why they're filling in fields or what they'll get in return. Ambiguity kills conversions.",
       suggestedFix: "Add a heading above each form that states the value of completing it: 'Get early access to [Product]' or 'Talk to someone in 24 hours'. The form should feel like a step toward something, not a gate.",
       effort: "Low", impact: "Medium",
+      found: `${data.forms.total} form${data.forms.total !== 1 ? "s" : ""} detected with no directional context or outcome-based CTA near them.`,
+      expected: "A clear heading or description near each form explaining what the user gets by completing it.",
     });
   }
 
@@ -1765,6 +1819,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "More than 60 links on a single page creates decision paralysis. Every extra link competes with the primary user goal. Users who can't decide what to click on, don't click anything.",
       suggestedFix: "Audit every link on the page. Remove or consolidate any link that does not directly serve the user's goal at this stage of their journey. Fewer options means more conversions.",
       effort: "Medium", impact: "Medium",
+      found: `${data.links.total} links found on the page.`,
+      expected: "Fewer than 50 links — every link should serve the user's current goal.",
     });
   }
 
@@ -1778,6 +1834,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "B2B buyers and first-time users look for a way to contact the team as a trust signal. Its absence suggests the company is either unreachable or unaccountable — both are conversion killers.",
       suggestedFix: "Add a contact link, support email, or live chat to the navigation or footer. Enterprise buyers specifically look for this before initiating any evaluation.",
       effort: "Low", impact: "Medium",
+      found: "No contact link, support email, or chat widget detected.",
+      expected: "A visible way to reach the team: contact page, support email, or live chat.",
     });
   }
 
@@ -1788,6 +1846,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "When users share this page on LinkedIn, Slack, or in email, it renders as a plain URL with no image or description. The product looks unfinished before the recipient even visits.",
       suggestedFix: "Add og:title, og:description, and og:image to the page head. This takes 20 minutes and transforms every shared link into a controlled preview of the product.",
       effort: "Low", impact: "Medium",
+      found: "No Open Graph meta tags (og:title, og:description, og:image) detected.",
+      expected: "og:title, og:description, and og:image so every shared link shows a controlled product preview.",
     });
   }
 
@@ -1800,6 +1860,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Screen readers skip images without alt text entirely. For visually impaired users, these images and any information they carry simply do not exist. This also fails WCAG AA standards.",
       suggestedFix: `Add descriptive alt text to all ${data.images.missingAlt} images. For content images: describe what the image shows in under 15 words. For decorative images: use alt="". Affected sources: ${data.images.missingAltSamples.slice(0, 2).join(", ")}`,
       effort: "Medium", impact: "Medium",
+      found: `${data.images.missingAlt} of ${data.images.total} images have no alt text.`,
+      expected: "All content images with descriptive alt text; decorative images with alt=\"\".",
     });
   } else if (data.images.missingAlt > 0) {
     findings.push({
@@ -1808,6 +1870,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Every image without alt text is a gap in the product experience for users who rely on assistive technology. It also reduces SEO value.",
       suggestedFix: "Add alt text to each affected image: describe the content or purpose in plain language. For purely decorative images, use alt=\"\".",
       effort: "Low", impact: "Medium",
+      found: `${data.images.missingAlt} of ${data.images.total} image${data.images.missingAlt !== 1 ? "s are" : " is"} missing alt text.`,
+      expected: "Descriptive alt text on every content image for screen reader accessibility.",
     });
   }
 
@@ -1820,6 +1884,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Without a viewport meta tag, the page renders as a miniaturised desktop layout on mobile. Text is unreadable, navigation is unusable, and CTAs are invisible. Mobile users immediately leave.",
       suggestedFix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1"> to the <head>. This single line enables responsive behaviour and is the prerequisite for every other mobile fix.',
       effort: "Low", impact: "High",
+      found: "No viewport meta tag found in the page <head>.",
+      expected: '<meta name="viewport" content="width=device-width, initial-scale=1"> enabling responsive layout.',
     });
   }
 
@@ -1833,6 +1899,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "A page over 800KB takes 3–5 seconds to load on a typical mobile connection. 53% of mobile users abandon a page that takes more than 3 seconds. Users are forming a negative product impression before the page is even visible.",
       suggestedFix: "Audit page weight: compress and lazy-load images, remove unused CSS/JS, and defer non-critical scripts. Aim for under 300KB for the initial render. Each second of improvement is a measurable conversion gain.",
       effort: "High", impact: "High",
+      found: `Page size: ${(data.pageSize / 1000).toFixed(0)}KB.`,
+      expected: "Page weight under 300KB for initial render on mobile connections.",
     });
   } else if (data.pageSize > 400_000) {
     findings.push({
@@ -1841,6 +1909,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Pages over 400KB take 2+ seconds on mobile. This is below the threshold where users consciously notice the wait, but it measurably increases bounce rate and reduces first impressions.",
       suggestedFix: "Review page weight: compress images, minimise CSS/JS bundles, and lazy-load content below the fold. Target under 200KB for the initial viewport render.",
       effort: "Medium", impact: "Medium",
+      found: `Page size: ${(data.pageSize / 1000).toFixed(0)}KB.`,
+      expected: "Page weight under 200KB for the initial viewport render.",
     });
   }
 
@@ -1851,6 +1921,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Each additional script adds a network request and blocks rendering. More than 10 scripts typically means unused analytics, redundant chat widgets, or A/B testing tools that are no longer active. Users experience this as a slow product.",
       suggestedFix: "Audit every script. Remove tracking tools that are not actively used. Defer or lazy-load non-critical scripts. Consider consolidating third-party tools into a single tag manager.",
       effort: "Medium", impact: "Medium",
+      found: `${data.scripts} <script> tags detected on the page.`,
+      expected: "10 or fewer scripts for a fast, low-friction load.",
     });
   }
 
@@ -1863,6 +1935,8 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
       whyItMatters: "Without a canonical tag, search engines may index multiple versions of the same URL with different parameters. This splits SEO authority across duplicates rather than concentrating it on one page.",
       suggestedFix: 'Add <link rel="canonical" href="[page URL]"> to the <head> tag. This tells search engines which URL is the authoritative version.',
       effort: "Low", impact: "Low",
+      found: "No <link rel=\"canonical\"> tag found in the page <head>.",
+      expected: "A canonical link tag pointing to the authoritative URL to consolidate SEO authority.",
     });
   }
 
@@ -1872,7 +1946,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 }
 // ── Real audit result from API data ──────────────────────────────────────────
 
-function buildRealAuditResult(data: APIAuditData, url: string, context: SiteContext): AuditResult {
+function buildRealAuditResult(data: APIAuditData, url: string, context: SiteContext, auditStatus: AuditStatus = "success"): AuditResult {
   const findings = generateFindingsFromAPIData(data, url, context);
   const domain = (() => {
     try { return new URL(data.url).hostname.replace("www.", ""); }
@@ -1924,6 +1998,7 @@ function buildRealAuditResult(data: APIAuditData, url: string, context: SiteCont
       urgentFindings[0]?.issue ??
       "Review full findings",
     findings,
+    auditStatus,
   };
 }
 
@@ -2218,39 +2293,19 @@ export default function AuditTool() {
       });
 
       setSiteContext(ctx);
-      setResult(buildRealAuditResult(fetchedData, norm, ctx));
+
+      // Detect partial: real data fetched but page appears client-rendered (very thin content)
+      const isPartial =
+        fetchedData.wordCount < 30 &&
+        fetchedData.buttons.total === 0 &&
+        fetchedData.h1Tags.length === 0;
+
+      setResult(buildRealAuditResult(fetchedData, norm, ctx, isPartial ? "partial" : "success"));
 
     } else {
-      // ⚠️ API failed — fall back to heuristic mock + URL-based context
+      // ❌ API failed — show FAILED state, do NOT display heuristic findings
       setIsRealAudit(false);
-
-      let parsedHostname = "";
-      let parsedPath = "";
-      try { const u = new URL(norm); parsedHostname = u.hostname; parsedPath = u.pathname; } catch { /* */ }
-
-      const ctx = classifySiteContext({
-        hostname: parsedHostname,
-        urlPath: parsedPath,
-        title: "", description: "", h1Tags: [], h2Tags: [],
-        wordCount: 0, buttonCount: 0, formCount: 0, linkCount: 0,
-        hasPricing: false, hasSignup: false, hasContact: false,
-        detectedBuilder: detectBuilder(norm),
-      });
-      setSiteContext(ctx);
-
-      const mockResult = buildAuditResult(norm);
-      if (apiError) {
-        mockResult.findings.unshift({
-          id: "api-error",
-          priority: "important",
-          category: "Performance Perception",
-          issue: `Live scan failed: ${apiError}`,
-          whyItMatters: "The auditor could not fetch this URL — it may block bots, require authentication, or use client-side rendering. Findings below are based on URL pattern heuristics only.",
-          suggestedFix: "Try a different URL, or verify the site is publicly accessible without login.",
-          effort: "Low", impact: "Low",
-        });
-      }
-      setResult(mockResult);
+      setResult(buildFailedAuditResult(norm, apiError ?? "Could not access this website."));
     }
 
     setAuditState("results");
@@ -2820,6 +2875,68 @@ export default function AuditTool() {
 
   // ── Results ───────────────────────────────────────────────────────────────
   if (auditState === "results" && result) {
+
+    // ── FAILED state — page could not be accessed ────────────────────────────
+    if (result.auditStatus === "failed") {
+      return (
+        <div ref={resultRef} className="mx-auto max-w-[1200px] py-10 sm:py-14">
+          {/* Back action */}
+          <div className="mb-6 flex items-center gap-3">
+            <button
+              onClick={reset}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-[11px] text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-50"
+            >
+              ← Try another URL
+            </button>
+            <span className="font-mono text-[11px] text-zinc-400">{result.domain}</span>
+          </div>
+
+          {/* Failure card */}
+          <div className="rounded-2xl border border-red-100 bg-red-50 p-8 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="text-red-500">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+            </div>
+            <h2 className="mb-2 text-xl font-bold text-zinc-900">Could not analyze website</h2>
+            <p className="mb-5 text-sm text-zinc-600">We could not access this website.</p>
+            {result.fetchError && (
+              <div className="mx-auto mb-5 max-w-md rounded-xl border border-red-200 bg-white px-4 py-3">
+                <p className="font-mono text-[11px] text-red-600">{result.fetchError}</p>
+              </div>
+            )}
+            <div className="mx-auto mb-6 max-w-sm text-left">
+              <p className="mb-2 font-mono text-[11px] font-semibold uppercase tracking-widest text-zinc-500">Possible reasons</p>
+              <ul className="space-y-1.5">
+                {["Website blocks automated crawlers", "Authentication or login required", "Temporary network issue", "Client-rendered SPA (no server-side HTML)"].map((r) => (
+                  <li key={r} className="flex items-start gap-2 text-sm text-zinc-600">
+                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-red-300" />
+                    {r}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={reset}
+                className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-700"
+              >
+                Try a different URL
+              </button>
+              <button
+                onClick={viewExampleAudit}
+                className="rounded-xl border border-zinc-200 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-700 transition-colors hover:border-zinc-400"
+              >
+                See example audit
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     const sortedFindings = sortFindings(result.findings);
     const urgentCount = sortedFindings.filter((f) => f.priority === "urgent").length;
     const importantCount = sortedFindings.filter((f) => f.priority === "important").length;
@@ -2872,6 +2989,19 @@ export default function AuditTool() {
 
           {/* Context banner */}
           {siteContext && <ContextBanner context={siteContext} />}
+
+          {/* Partial analysis warning */}
+          {result.auditStatus === "partial" && (
+            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <span className="mt-0.5 shrink-0 text-base leading-none">⚠</span>
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Limited analysis — findings may be incomplete</p>
+                <p className="mt-0.5 text-[12px] text-amber-700">
+                  The page returned very little readable content. It may rely on client-side rendering (JavaScript). Some findings are based on heuristics only.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Summary cards */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -3621,6 +3751,33 @@ export default function AuditTool() {
                 {/* ── Scrollable body ─────────────────────────────────────────── */}
                 <div className="flex-1 overflow-y-auto overscroll-contain">
                   <div className="space-y-5 p-5">
+
+                    {/* ── FOUND / EXPECTED / IMPACT reasoning layer ────────────── */}
+                    {(evidenceFinding.found || evidenceFinding.expected) && (
+                      <div>
+                        <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                          Why this finding exists
+                        </p>
+                        <div className="space-y-2">
+                          {evidenceFinding.found && (
+                            <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3.5">
+                              <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-red-500">Found</p>
+                              <p className="text-sm leading-relaxed text-zinc-800">{evidenceFinding.found}</p>
+                            </div>
+                          )}
+                          {evidenceFinding.expected && (
+                            <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3.5">
+                              <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-emerald-600">Expected</p>
+                              <p className="text-sm leading-relaxed text-zinc-700">{evidenceFinding.expected}</p>
+                            </div>
+                          )}
+                          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3.5">
+                            <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-amber-600">Impact</p>
+                            <p className="text-sm leading-relaxed text-zinc-700">{evidenceFinding.whyItMatters}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* ── Visual focus screenshot preview ─────────────────────── */}
                     <div>

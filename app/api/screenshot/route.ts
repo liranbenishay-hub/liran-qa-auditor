@@ -144,6 +144,44 @@ export async function POST(req: NextRequest) {
     // Brief pause for above-fold rendering (hero, header, background images)
     await new Promise((r) => setTimeout(r, 1500));
 
+    // ── Screenshot diagnostics — rendered DOM after JS execution ─────────────
+    try {
+      const renderedHtml = await page.content();
+      const renderedWordCount = renderedHtml
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .split(/\s+/).filter(Boolean).length;
+
+      const renderedH1s = [...renderedHtml.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi)]
+        .map(m => m[1].replace(/<[^>]+>/g, "").trim())
+        .filter(Boolean)
+        .slice(0, 3);
+
+      const renderedButtons = (renderedHtml.match(/<button\b/gi) ?? []).length;
+      const renderedLinks   = (renderedHtml.match(/<a\s/gi) ?? []).length;
+
+      const pageTitle = await page.title();
+
+      console.log(`
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SCREENSHOT DIAGNOSTICS (rendered DOM after JS execution)                    ║
+║  ${targetUrl.slice(0, 74).padEnd(74)} ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  Page title:                "${pageTitle.slice(0, 50)}"
+║  Rendered HTML length:      ${String(renderedHtml.length).padEnd(10)} chars  (${(renderedHtml.length / 1024).toFixed(1)} KB)
+║  Rendered word count:       ${String(renderedWordCount).padEnd(10)} (vs fetch-only scan)
+║  Rendered H1 tags:          ${String(renderedH1s.length).padEnd(10)} ${renderedH1s[0] ? `"${renderedH1s[0].slice(0, 40)}"` : "(none)"}
+║  Rendered <button> tags:    ${String(renderedButtons).padEnd(10)}
+║  Rendered <a> tags:         ${String(renderedLinks).padEnd(10)}
+╚══════════════════════════════════════════════════════════════════════════════╝
+`);
+    } catch (diagErr) {
+      console.warn("[screenshot] Diagnostics collection failed (non-fatal):", diagErr);
+    }
+
     const buffer = await page.screenshot({
       type: "jpeg",
       quality: 90,

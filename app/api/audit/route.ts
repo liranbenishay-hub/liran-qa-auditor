@@ -12,12 +12,21 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-export const maxDuration = 10; // Vercel Hobby plan compatible
+export const maxDuration = 55; // Extended: rendered DOM extraction for CSR/SPA sites
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const FETCH_TIMEOUT_MS = 8000; // Leave 2s margin for processing
+const FETCH_TIMEOUT_MS = 8000; // Leave margin for processing
 const MAX_CONTENT_BYTES = 2_000_000; // 2MB — enough for any reasonable page
+const RENDER_WAIT_MS = 2500; // Wait for React/Vite to hydrate after domcontentloaded
+const RENDER_NAV_TIMEOUT_MS = 15_000; // 15s navigation timeout for Puppeteer path
+
+/**
+ * Chromium pack for @sparticuz/chromium-min — same binary as /api/screenshot.
+ * Cached in /tmp after first download; warm invocations are fast.
+ */
+const CHROMIUM_PACK_URL =
+  "https://github.com/Sparticuz/chromium/releases/download/v149.0.0/chromium-v149.0.0-pack.x64.tar";
 
 const BOT_USER_AGENT =
   "Mozilla/5.0 (compatible; AIBuilderQABot/1.0; +https://aibuilderqa.com/about)";
@@ -74,6 +83,13 @@ export interface AuditData {
   };
   scripts: number;
   stylesheets: number;
+  /**
+   * How the page data was obtained:
+   * - "static-html"        — server-side HTML from a plain fetch (SSR / static sites)
+   * - "rendered-dom"       — browser-rendered DOM captured via Puppeteer (CSR / SPA sites)
+   * - "heuristic-fallback" — insufficient data; findings are heuristic-only
+   */
+  analysisSource: "static-html" | "rendered-dom" | "heuristic-fallback";
 }
 
 export interface AuditError {
@@ -356,6 +372,155 @@ function detectSignals(
   };
 }
 
+// ── SPA / hydration detection ─────────────────────────────────────────────────
+
+interface HydrationInfo {
+  hydrationDetected: boolean;
+  markers: string[];
+}
+
+interface CSRInfo {
+  isCSR: boolean;
+  /** Subjective confidence based on number and strength of CSR signals */
+  confidence: "high" | "medium" | "low" | "none";
+  reasons: string[];
+}
+
+function detectHydration(html: string): HydrationInfo {
+  const markers: string[] = [];
+  if (html.includes("data-reactroot"))            markers.push("data-reactroot");
+  if (html.includes("__NEXT_DATA__"))             markers.push("__NEXT_DATA__");
+  if (html.includes("_reactRootContainer"))       markers.push("_reactRootContainer");
+  if (html.includes("__NUXT__"))                  markers.push("__NUXT__");
+  if (html.includes("__vue_app__"))               markers.push("__vue_app__");
+  if (html.includes("ng-version"))                markers.push("ng-version (Angular)");
+  if (html.includes("__REACT_QUERY_STATE__"))     markers.push("__REACT_QUERY_STATE__");
+  if (html.includes("vite/client"))               markers.push("vite/client");
+  if (html.includes("__vite_is_modern_browser"))  markers.push("vite-modern-detect");
+  if (html.includes("@vite/client"))              markers.push("@vite/client");
+  if (html.includes("__REDUX_DEVTOOLS_EXTENSION__")) markers.push("Redux DevTools");
+  return { hydrationDetected: markers.length > 0, markers };
+}
+
+function detectCSR(
+  html: string,
+  wordCount: number,
+  h1Count: number,
+  buttonCount: number,
+  scriptCount: number,
+): CSRInfo {
+  const reasons: string[] = [];
+
+  // Empty root div — strongest CSR signal
+  const emptyRootDiv = /<div[^>]*\bid=["']root["'][^>]*>\s*<\/div>/i.test(html);
+  const emptyAppDiv  = /<div[^>]*\bid=["']app["'][^>]*>\s*<\/div>/i.test(html);
+  if (emptyRootDiv)  reasons.push("empty #root div");
+  if (emptyAppDiv)   reasons.push("empty #app div");
+
+  // High script count + thin content
+  if (scriptCount > 4 && wordCount < 80)  reasons.push(`${scriptCount} scripts, only ${wordCount} words`);
+  if (scriptCount > 8)                    reasons.push(`very high script count (${scriptCount})`);
+
+  // No semantic content at all
+  if (h1Count === 0 && buttonCount === 0 && wordCount < 30) {
+    reasons.push("no H1, no buttons, <30 words — shell HTML only");
+  }
+
+  // Vite / CRA / webpack bundle filenames
+  if (/assets\/index[-.\w]+\.js/.test(html))        reasons.push("Vite bundle (assets/index-*.js)");
+  if (/\/static\/js\/main\.\w+\.js/.test(html))     reasons.push("CRA bundle (/static/js/main.*.js)");
+  if (/chunk[-\w]+\.js/.test(html))                 reasons.push("webpack chunk detected");
+
+  // Lovable / builder-specific signals
+  if (html.includes("lovable-tagger"))              reasons.push("lovable-tagger script");
+  if (html.includes("lovableproject.com"))          reasons.push("lovableproject.com reference");
+  if (html.includes("gptengineer"))                 reasons.push("GPT Engineer / Lovable origin");
+
+  const signalCount = reasons.length;
+  const hasDefinitiveSignal = emptyRootDiv || emptyAppDiv;
+  const isCSR = hasDefinitiveSignal || signalCount >= 2;
+  const confidence: CSRInfo["confidence"] =
+    hasDefinitiveSignal && signalCount >= 3 ? "high" :
+    hasDefinitiveSignal || signalCount >= 3 ? "medium" :
+    signalCount >= 2 ? "low" : "none";
+
+  return { isCSR, confidence, reasons };
+}
+
+// ── Rendered DOM extraction (for CSR / SPA pages) ────────────────────────────
+
+/**
+ * Launches a headless Chromium browser, navigates to the URL, waits for the
+ * JavaScript framework to hydrate, and returns the fully-rendered HTML.
+ *
+ * Used when static fetch detects a CSR shell (empty #root div, Vite bundles,
+ * near-zero text). Falls back gracefully — returns null on any failure so the
+ * caller can stick with static signals.
+ *
+ * Shares the same Chromium binary as /api/screenshot (cached in /tmp).
+ */
+async function extractRenderedDOM(
+  url: string,
+): Promise<{ html: string; pageTitle: string } | null> {
+  let browser: import("puppeteer-core").Browser | undefined;
+  try {
+    const [chromium, puppeteer] = await Promise.all([
+      import("@sparticuz/chromium-min").then((m) => m.default),
+      import("puppeteer-core").then((m) => m.default),
+    ]);
+
+    chromium.setGraphicsMode = false;
+    console.log("[audit/render] Resolving Chromium binary...");
+    const executablePath = await chromium.executablePath(CHROMIUM_PACK_URL);
+
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: { width: 1280, height: 800, deviceScaleFactor: 1, hasTouch: false, isMobile: false },
+      executablePath,
+      headless: "shell" as NonNullable<Parameters<typeof puppeteer.launch>[0]>["headless"],
+    });
+    console.log("[audit/render] Browser launched");
+
+    const page = await browser.newPage();
+
+    // Block images/media/fonts — we need JS + CSS to render, not assets
+    await page.setRequestInterception(true);
+    page.on("request", (req) => {
+      if (["image", "media", "font"].includes(req.resourceType())) {
+        req.abort().catch(() => {});
+      } else {
+        req.continue().catch(() => {});
+      }
+    });
+
+    console.log(`[audit/render] Navigating to ${url}...`);
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: RENDER_NAV_TIMEOUT_MS,
+    });
+
+    // Wait for React / Vite to hydrate and render components above the fold
+    console.log(`[audit/render] Waiting ${RENDER_WAIT_MS}ms for JS hydration...`);
+    await new Promise((r) => setTimeout(r, RENDER_WAIT_MS));
+
+    const html      = await page.content();
+    const pageTitle = await page.title();
+
+    console.log(
+      `[audit/render] ✓ Rendered HTML: ${html.length} chars | title: "${pageTitle}"`,
+    );
+    return { html, pageTitle };
+  } catch (err) {
+    console.error(
+      "[audit/render] ✗ Rendered DOM extraction failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return null;
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
+}
+
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(
@@ -455,28 +620,148 @@ export async function POST(
 
   const fetchDuration = Date.now() - fetchStart;
 
-  // ── Parse HTML
-  const title = extractTitle(html);
-  const description = extractMeta(html, "description");
-  const h1Tags = extractTagTexts(html, "h1", 10);
-  const h2Tags = extractTagTexts(html, "h2", 20);
-  const links = extractLinks(html, targetUrl);
-  const buttons = extractButtons(html);
-  const forms = extractForms(html);
-  const images = extractImages(html);
+  // ── Static HTML parse (always runs) ────────────────────────────────────────
+  // Use `let` so the rendered DOM path can replace these with richer signals.
+  let title       = extractTitle(html);
+  let description = extractMeta(html, "description");
+  let h1Tags      = extractTagTexts(html, "h1", 10);
+  let h2Tags      = extractTagTexts(html, "h2", 20);
+  let links       = extractLinks(html, targetUrl);
+  let buttons     = extractButtons(html);
+  let forms       = extractForms(html);
+  let images      = extractImages(html);
 
-  // Strip scripts/styles before text analysis
   const textHtml = removeScriptsAndStyles(html);
   const plainText = cleanText(textHtml);
-  const wordCount = plainText.split(/\s+/).filter(Boolean).length;
+  let wordCount = plainText.split(/\s+/).filter(Boolean).length;
 
-  const ctaElements = extractCTAs(buttons.samples, links.samples);
-  const signals = detectSignals(html, plainText);
+  let ctaElements = extractCTAs(buttons.samples, links.samples);
+  let signals     = detectSignals(html, plainText);
 
   const scripts = (html.match(/<script\b/gi) ?? []).length;
   const stylesheets = (
     html.match(/<link\s[^>]*rel=["']stylesheet["']/gi) ?? []
   ).length;
+
+  // ── CSR detection — decide whether to attempt rendered DOM extraction ───────
+  const hydration = detectHydration(html);
+  const csr       = detectCSR(html, wordCount, h1Tags.length, buttons.total, scripts);
+
+  // ── Rendered DOM extraction (CSR / SPA path) ────────────────────────────────
+  let analysisSource: AuditData["analysisSource"] = "static-html";
+  let renderedWordCount: number | null = null;
+  let renderedH1Count:   number | null = null;
+  let renderedBtnCount:  number | null = null;
+
+  if (csr.isCSR) {
+    console.log(
+      `[audit] CSR detected (${csr.confidence} confidence) — attempting rendered DOM extraction`,
+    );
+    const rendered = await extractRenderedDOM(targetUrl.href);
+
+    if (rendered) {
+      const rTextHtml   = removeScriptsAndStyles(rendered.html);
+      const rPlainText  = cleanText(rTextHtml);
+      const rWordCount  = rPlainText.split(/\s+/).filter(Boolean).length;
+      const rH1Tags     = extractTagTexts(rendered.html, "h1", 10);
+      const rButtons    = extractButtons(rendered.html);
+
+      renderedWordCount = rWordCount;
+      renderedH1Count   = rH1Tags.length;
+      renderedBtnCount  = rButtons.total;
+
+      // Only adopt rendered signals if they are meaningfully richer than static.
+      // This guards against accidentally using a Puppeteer error page.
+      const isRicher = rWordCount > wordCount + 30 || rWordCount > 60;
+      if (isRicher) {
+        title       = extractTitle(rendered.html) || rendered.pageTitle || title;
+        description = extractMeta(rendered.html, "description") || description;
+        h1Tags      = rH1Tags;
+        h2Tags      = extractTagTexts(rendered.html, "h2", 20);
+        links       = extractLinks(rendered.html, targetUrl);
+        buttons     = rButtons;
+        forms       = extractForms(rendered.html);
+        images      = extractImages(rendered.html);
+        wordCount   = rWordCount;
+        ctaElements = extractCTAs(rButtons.samples, links.samples);
+        signals     = detectSignals(rendered.html, rPlainText);
+        analysisSource = "rendered-dom";
+        console.log(
+          `[audit] ✓ Rendered DOM adopted: ${rWordCount} words, ${rH1Tags.length} H1s, ${rButtons.total} buttons`,
+        );
+      } else {
+        console.log(
+          `[audit] Rendered DOM not richer (${rWordCount} rendered vs ${wordCount} static words) — keeping static signals`,
+        );
+      }
+    } else {
+      console.log("[audit] Rendered DOM extraction returned null — keeping static signals");
+    }
+  }
+
+  // ── Diagnostics — printed to server logs for every scan ─────────────────────
+  // (hydration and csr already computed above for the CSR branch decision)
+
+  // Extract a representative body snippet (up to 500 chars starting from <body)
+  const bodyTagIdx = html.toLowerCase().indexOf("<body");
+  const bodySnippet = bodyTagIdx >= 0
+    ? html.slice(bodyTagIdx, bodyTagIdx + 600).replace(/\s+/g, " ")
+    : html.slice(0, 600).replace(/\s+/g, " ");
+
+  // Inline HTML after script/style removal — shows what the parser actually sees
+  const textOnlyLength = textHtml.length;
+
+  const renderedSection = analysisSource === "rendered-dom"
+    ? `╠══════════════════════════════════════════════════════════════════════════════╣
+║  RENDERED DOM EXTRACTION                                                     ║
+║    Analysis source:         rendered-dom (Puppeteer)                         ║
+║    Rendered word count:     ${String(renderedWordCount ?? "n/a").padEnd(10)}                                   ║
+║    Rendered H1 count:       ${String(renderedH1Count ?? "n/a").padEnd(10)}                                   ║
+║    Rendered button count:   ${String(renderedBtnCount ?? "n/a").padEnd(10)}                                   ║
+║    ✓ Rendered signals adopted — final values above reflect rendered DOM      ║`
+    : csr.isCSR
+      ? `╠══════════════════════════════════════════════════════════════════════════════╣
+║  RENDERED DOM EXTRACTION                                                     ║
+║    Analysis source:         static-html (rendered extraction skipped/failed) ║
+║    Rendered word count:     ${String(renderedWordCount ?? "n/a").padEnd(10)}                                   ║
+║    Rendered H1 count:       ${String(renderedH1Count ?? "n/a").padEnd(10)}                                   ║
+║    ✗ Rendered signals NOT adopted — static signals used for audit            ║`
+      : `╠══════════════════════════════════════════════════════════════════════════════╣
+║  RENDERED DOM EXTRACTION                                                     ║
+║    Analysis source:         static-html (CSR not detected — skip render)     ║`;
+
+  console.log(`
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SCAN DIAGNOSTICS                                                            ║
+║  ${targetUrl.href.slice(0, 74).padEnd(74)} ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  RAW HTML (static fetch)                                                     ║
+║    Full HTML length:        ${String(html.length).padEnd(10)} chars  (${(html.length / 1024).toFixed(1)} KB)                    ║
+║    Text-only HTML length:   ${String(textOnlyLength).padEnd(10)} chars  (scripts/styles removed)           ║
+║    Plain text length:       ${String(plainText.length).padEnd(10)} chars                                   ║
+║    Status code:             ${String(statusCode).padEnd(10)} | Fetch duration: ${fetchDuration}ms                ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  FINAL EXTRACTED SIGNALS (after any rendered DOM adoption)                   ║
+║    Visible word count:      ${String(wordCount).padEnd(10)}                                   ║
+║    H1 tags found:           ${String(h1Tags.length).padEnd(10)} ${(h1Tags.length > 0 ? `"${h1Tags[0].slice(0, 40)}"` : "(none)").padEnd(44)}║
+║    Buttons found:           ${String(buttons.total).padEnd(10)} ${(buttons.samples.slice(0, 2).join(" | ") || "(none)").slice(0, 44).padEnd(44)}║
+║    Links found:             ${String(links.total).padEnd(10)} (${links.internal} internal, ${links.external} external)
+║    Scripts:                 ${String(scripts).padEnd(10)} | Stylesheets: ${stylesheets}
+║    Title:                   "${title.slice(0, 60)}"
+║    Description:             "${description.slice(0, 60)}"
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  SPA / HYDRATION ANALYSIS                                                    ║
+║    Hydration detected:      ${(hydration.hydrationDetected ? "YES" : "NO").padEnd(10)}                                   ║
+║    Hydration markers:       ${(hydration.markers.join(", ") || "(none)").slice(0, 50)}
+║    Client-side rendered:    ${(csr.isCSR ? `YES (${csr.confidence} confidence)` : "NO (or SSR)").padEnd(30)}
+║    CSR reasons:             ${(csr.reasons[0] ?? "(none)").slice(0, 50)}
+${csr.reasons.slice(1).map(r => `║                             ${r.slice(0, 50)}`).join("\n")}
+${renderedSection}
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  STATIC BODY SNIPPET (first 500 chars of <body>)                             ║
+${bodySnippet.slice(0, 500).match(/.{1,76}/g)?.map(l => `║  ${l.padEnd(76)}║`).join("\n") ?? ""}
+╚══════════════════════════════════════════════════════════════════════════════╝
+`);
 
   // ── Respond
   const result: AuditData = {
@@ -498,6 +783,7 @@ export async function POST(
     signals,
     scripts,
     stylesheets,
+    analysisSource,
   };
 
   return NextResponse.json(result);

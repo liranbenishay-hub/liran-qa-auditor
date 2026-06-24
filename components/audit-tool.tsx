@@ -13,7 +13,16 @@ import {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type AuditState = "idle" | "loading" | "results";
-type AuditStatus = "success" | "partial" | "failed";
+
+/** Richer scan reliability object — replaces the old AuditStatus string enum */
+interface ScanQuality {
+  /** reliable = full DOM data; limited = thin/partial data; failed = no usable data */
+  status: "reliable" | "limited" | "failed";
+  /** Human-readable reasons explaining why this quality level was assigned */
+  reasons: string[];
+  /** 0–100 confidence in scan completeness */
+  confidence: number;
+}
 type SiteType = "saas" | "ecommerce" | "devtool" | "portfolio" | "enterprise" | "marketplace" | "landing" | "ai-builder";
 type Priority = "urgent" | "important" | "later";
 type Category =
@@ -55,10 +64,8 @@ interface AuditResult {
   findings: AuditFinding[];
   /** Will hold a screenshot data-URL or CDN URL once capture is implemented */
   screenshotUrl?: string;
-  /** Audit quality: success = full DOM inspection, partial = thin data, failed = page unreachable */
-  auditStatus: AuditStatus;
-  /** Human-readable fetch error shown in the FAILED state */
-  fetchError?: string;
+  /** Scan reliability classification — drives UI quality warnings and failure states */
+  scanQuality: ScanQuality;
 }
 
 type FixPrompts = Record<ToolId, string>;
@@ -139,6 +146,207 @@ const RECOMMENDED_TOOLTIP: Record<ToolId, string> = {
   cursor: "Cursor detected. This prompt uses in-editor conventions — codebase search, diff review, and file-scoped changes.",
   generic: "Builder detected but no specific tab matches. This generic prompt works with any AI builder or assistant.",
 };
+
+// ── Known blocked / restricted domains ───────────────────────────────────────
+/**
+ * Domains that require login, use heavy bot protection, or restrict automated access.
+ * Auditing these produces results from the auth/redirect page, not the product.
+ */
+const KNOWN_BLOCKED_DOMAINS = new Set([
+  "linkedin.com",
+  "facebook.com",
+  "instagram.com",
+  "x.com",
+  "twitter.com",
+  "chat.openai.com",
+]);
+
+/** Login-page signal phrases — detected in title + H1 text */
+const LOGIN_PAGE_SIGNALS = [
+  "log in", "sign in", "login", "signup", "sign up",
+  "join now", "authentication", "create account", "create your account",
+];
+
+// ── Scan quality classifier ───────────────────────────────────────────────────
+
+/**
+ * Evaluates DOM signals to classify how reliably the page was scanned.
+ * Called immediately after API response — before building findings.
+ *
+ * RELIABLE  → full output, no warnings
+ * LIMITED   → output shown with specific reasons banner
+ * FAILED    → all audit output blocked; only error UI shown
+ */
+function computeScanQuality(
+  data: APIAuditData | null,
+  fetchError: string | null,
+  url?: string,
+): ScanQuality {
+  // ── Extract hostname for domain checks ──────────────────────────────────────
+  let hostname = "";
+  if (url) {
+    try {
+      hostname = new URL(url.startsWith("http") ? url : `https://${url}`)
+        .hostname.toLowerCase().replace(/^www\./, "");
+    } catch { /* ignore */ }
+  }
+
+  // ── FAILED: known blocked / login-heavy domain ─────────────────────────────
+  if (hostname) {
+    const isBlocked = [...KNOWN_BLOCKED_DOMAINS].some(
+      (d) => hostname === d || hostname.endsWith(`.${d}`),
+    );
+    if (isBlocked) {
+      return {
+        status: "failed",
+        reasons: [
+          "This domain typically requires login, uses bot protection, or restricts automated access",
+          "Audit findings would be based on a login or redirect page, not the actual product",
+        ],
+        confidence: 0,
+      };
+    }
+  }
+  // ── FAILED: API error or null data ─────────────────────────────────────────
+  if (!data || fetchError) {
+    const reasons: string[] = [];
+    if (fetchError) reasons.push(fetchError);
+    else reasons.push("Page data could not be retrieved");
+    return { status: "failed", reasons, confidence: 0 };
+  }
+
+  const hasTitle   = !!data.title && data.title.trim().length > 0;
+  const hasH1      = data.h1Tags.length > 0;
+  const hasButtons = data.buttons.total > 0;
+  const hasLinks   = data.links.total > 3;
+  const hasMeta    = !!data.description && data.description.trim().length > 0;
+  const wordCount  = data.wordCount;
+  const signalCount = [hasTitle, hasH1, hasButtons, hasLinks, hasMeta].filter(Boolean).length;
+
+  // ── FAILED: login / auth page detected ────────────────────────────────────
+  // If the page looks like a login screen, findings would reflect the auth page, not the product.
+  // Only fire this when content is thin (login pages can have lots of text on marketing sites).
+  const titleAndH1 = [data.title ?? "", ...data.h1Tags].join(" ").toLowerCase();
+  const isLoginPage = LOGIN_PAGE_SIGNALS.some((s) => titleAndH1.includes(s));
+  if (isLoginPage && wordCount < 300) {
+    return {
+      status: "failed",
+      reasons: [
+        "Page appears to be a login or sign-in screen — product content is not accessible",
+        "Findings would reflect the authentication page, not the actual product experience",
+      ],
+      confidence: 5,
+    };
+  }
+
+  // ── FAILED: virtually empty DOM ────────────────────────────────────────────
+  if (signalCount <= 1 && wordCount < 25) {
+    const reasons: string[] = [];
+    if (wordCount < 10) reasons.push(`Only ${wordCount} words of readable text extracted`);
+    else reasons.push(`Very thin content (${wordCount} words) — page likely blocked or fully client-rendered`);
+    if (!hasTitle && !hasH1) reasons.push("No page title or H1 detected");
+    if (!hasButtons && !hasLinks) reasons.push("No buttons or links found — interactive structure unverifiable");
+    reasons.push("Insufficient DOM content to produce reliable findings");
+    return { status: "failed", reasons, confidence: 5 };
+  }
+
+  // ── Collect LIMITED signals ────────────────────────────────────────────────
+  const limitedReasons: string[] = [];
+
+  if (wordCount < 50) {
+    limitedReasons.push(`Very low readable text (${wordCount} words) — client-side rendering suspected`);
+  } else if (wordCount < 120) {
+    limitedReasons.push(`Low readable text (${wordCount} words) — some findings may be based on heuristics`);
+  }
+
+  if (!hasTitle && !hasH1) {
+    limitedReasons.push("No page title or H1 found — structural signals incomplete");
+  } else if (!hasH1) {
+    limitedReasons.push("No H1 tag found — heading hierarchy could not be verified");
+  }
+
+  if (!hasButtons && !hasLinks) {
+    limitedReasons.push("No interactive elements detected — CTA and navigation analysis is heuristic-only");
+  }
+
+  if (signalCount < 3) {
+    limitedReasons.push(`Only ${signalCount}/5 content signals present — audit confidence reduced`);
+  }
+
+  if (limitedReasons.length > 0) {
+    const confidence = Math.max(
+      20,
+      Math.min(
+        64,
+        20 + signalCount * 7 + Math.min(wordCount, 300) / 300 * 20 + (hasTitle ? 5 : 0),
+      ),
+    );
+    return { status: "limited", reasons: limitedReasons, confidence: Math.round(confidence) };
+  }
+
+  // ── RELIABLE ───────────────────────────────────────────────────────────────
+  const confidence = Math.min(
+    95,
+    Math.round(
+      65 +
+        (hasTitle   ? 5 : 0) +
+        (hasH1      ? 5 : 0) +
+        (hasMeta    ? 5 : 0) +
+        (hasButtons ? 5 : 0) +
+        (Math.min(wordCount, 500) / 500) * 10,
+    ),
+  );
+  return { status: "reliable", reasons: [], confidence };
+}
+
+// ── Traffic-light display gate ────────────────────────────────────────────────
+
+/**
+ * Classifies a completed scan into a traffic-light color.
+ *
+ * GREEN  → show full audit results immediately
+ * YELLOW → require explicit user confirmation before showing any results
+ * RED    → block all findings/scores/prompts; show failure screen only
+ *
+ * @param screenshotAvailable — pass `true` once the screenshot has loaded.
+ *   Without a screenshot, GREEN requires very strong DOM signals (confidence ≥ 90).
+ *   confidence ≥ 90 is treated as self-sufficient — screenshot is then a bonus.
+ */
+function getScanTrafficLight(quality: ScanQuality, screenshotAvailable: boolean): "green" | "yellow" | "red" {
+  if (quality.status === "failed") return "red";
+  if (quality.status === "limited") return "yellow";
+  if (quality.confidence < 80) return "yellow";
+  // Without screenshot, require exceptionally strong DOM (≥ 90) for GREEN
+  if (!screenshotAvailable && quality.confidence < 90) return "yellow";
+  return "green";
+}
+
+// ── Post-deploy QA test sites ─────────────────────────────────────────────────
+/**
+ * Run these manually after each release to verify scan quality behavior.
+ * Compare actual scanQuality.status against `expected` for each entry.
+ *
+ * USAGE: Paste a URL from this list into the audit tool and check the
+ *        scan quality badge in the results header.
+ */
+const QA_TEST_SITES = [
+  // ✅ AI-built — expect RELIABLE (server-rendered HTML, minimal JS gating)
+  { url: "https://rapyd-spark-insights.lovable.app/", expected: "reliable", note: "Lovable demo — server HTML present" },
+  { url: "https://base44.app/",                       expected: "reliable", note: "Base44 marketing site" },
+  // ✅ SaaS marketing — expect RELIABLE
+  { url: "https://vercel.com",                        expected: "reliable", note: "SSR marketing site" },
+  { url: "https://linear.app",                        expected: "reliable", note: "SaaS marketing, SSR" },
+  { url: "https://wix.com",                           expected: "reliable", note: "Israeli SaaS marketing" },
+  // ⚠ SPA-heavy — expect LIMITED (thin initial HTML, content loads via JS)
+  { url: "https://figma.com",                         expected: "limited",  note: "Large SPA, reduced SSR" },
+  { url: "https://notion.so",                         expected: "limited",  note: "Hybrid SPA" },
+  // ❌ Login-required / blocked — expect FAILED
+  { url: "https://app.hubspot.com",                   expected: "failed",   note: "Requires authentication" },
+  { url: "https://x.com",                             expected: "failed",   note: "Bot-blocking social platform" },
+  { url: "https://localhost:3000",                    expected: "failed",   note: "Local URL — unreachable from API" },
+] as const;
+// Suppress unused-variable lint warning in dev
+void QA_TEST_SITES;
 
 const LOADING_STAGES = [
   "Connecting to target site...",
@@ -1590,7 +1798,7 @@ function buildAuditResult(url: string): AuditResult {
     bestQuickWin: quickWin?.issue ?? allFindings[0]?.issue ?? "See findings below",
     mainProductRisk: urgent.find((f) => f.category === "Conversion" || f.category === "Product Clarity")?.issue ?? urgent[0]?.issue ?? "Review full findings",
     findings: allFindings,
-    auditStatus: "success" as AuditStatus,
+    scanQuality: { status: "reliable", reasons: [], confidence: 70 },
   };
 }
 
@@ -1598,6 +1806,7 @@ function buildAuditResult(url: string): AuditResult {
 function buildFailedAuditResult(url: string, fetchError: string): AuditResult {
   let domain = url;
   try { domain = new URL(url.startsWith("http") ? url : `https://${url}`).hostname.replace("www.", ""); } catch { /* keep raw */ }
+  const scanQuality = computeScanQuality(null, fetchError, url);
   return {
     domain,
     siteType: "Unknown",
@@ -1607,8 +1816,7 @@ function buildFailedAuditResult(url: string, fetchError: string): AuditResult {
     bestQuickWin: "",
     mainProductRisk: "",
     findings: [],
-    auditStatus: "failed",
-    fetchError,
+    scanQuality,
   };
 }
 
@@ -1641,6 +1849,7 @@ interface APIAuditData {
   };
   scripts: number;
   stylesheets: number;
+  analysisSource?: "static-html" | "rendered-dom" | "heuristic-fallback";
 }
 
 // ── Rule-based findings engine — driven by real API data ─────────────────────
@@ -1946,7 +2155,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 }
 // ── Real audit result from API data ──────────────────────────────────────────
 
-function buildRealAuditResult(data: APIAuditData, url: string, context: SiteContext, auditStatus: AuditStatus = "success"): AuditResult {
+function buildRealAuditResult(data: APIAuditData, url: string, context: SiteContext, scanQuality?: ScanQuality): AuditResult {
   const findings = generateFindingsFromAPIData(data, url, context);
   const domain = (() => {
     try { return new URL(data.url).hostname.replace("www.", ""); }
@@ -1998,7 +2207,7 @@ function buildRealAuditResult(data: APIAuditData, url: string, context: SiteCont
       urgentFindings[0]?.issue ??
       "Review full findings",
     findings,
-    auditStatus,
+    scanQuality: scanQuality ?? computeScanQuality(data, null, url),
   };
 }
 
@@ -2077,6 +2286,10 @@ export default function AuditTool() {
   // Builder selector — user can pre-select their builder before running audit
   // null = Auto-detect (uses detection from audit result)
   const [preferredBuilder, setPreferredBuilder] = useState<string | null>(null);
+
+  // Scan gate — tracks whether user has explicitly confirmed a YELLOW limited-scan warning.
+  // GREEN scans auto-confirm. RED scans never show findings regardless of this value.
+  const [scanGateConfirmed, setScanGateConfirmed] = useState(false);
 
   // Demo iteration mode — simulated progress card
   const [demoOpen, setDemoOpen] = useState(false);
@@ -2294,18 +2507,22 @@ export default function AuditTool() {
 
       setSiteContext(ctx);
 
-      // Detect partial: real data fetched but page appears client-rendered (very thin content)
-      const isPartial =
-        fetchedData.wordCount < 30 &&
-        fetchedData.buttons.total === 0 &&
-        fetchedData.h1Tags.length === 0;
+      // Compute scan quality from actual DOM signals (pass URL for domain + login checks)
+      const quality = computeScanQuality(fetchedData, null, norm);
 
-      setResult(buildRealAuditResult(fetchedData, norm, ctx, isPartial ? "partial" : "success"));
+      setResult(buildRealAuditResult(fetchedData, norm, ctx, quality));
+
+      // Evaluate initial gate WITHOUT screenshot (not available yet).
+      // GREEN at this stage requires confidence >= 90 (exceptionally strong DOM).
+      // Screenshot loading later can upgrade a YELLOW to GREEN at render time.
+      const initialLight = getScanTrafficLight(quality, false);
+      setScanGateConfirmed(initialLight === "green");
 
     } else {
       // ❌ API failed — show FAILED state, do NOT display heuristic findings
       setIsRealAudit(false);
       setResult(buildFailedAuditResult(norm, apiError ?? "Could not access this website."));
+      setScanGateConfirmed(false);
     }
 
     setAuditState("results");
@@ -2378,6 +2595,7 @@ export default function AuditTool() {
     setCategoryOrder(DEFAULT_CATEGORY_ORDER);
     setScreenshotBase64(null); setScreenshotLoading(false); setScreenshotError(null);
     setScreenshotMeta(null); setScreenshotModalOpen(false);
+    setScanGateConfirmed(false);
   }
 
   function openDrawer(finding: AuditFinding) {
@@ -2876,8 +3094,8 @@ export default function AuditTool() {
   // ── Results ───────────────────────────────────────────────────────────────
   if (auditState === "results" && result) {
 
-    // ── FAILED state — page could not be accessed ────────────────────────────
-    if (result.auditStatus === "failed") {
+    // ── RED / FAILED state — could not complete reliable analysis ───────────
+    if (result.scanQuality.status === "failed" || getScanTrafficLight(result.scanQuality, !!screenshotBase64) === "red") {
       return (
         <div ref={resultRef} className="mx-auto max-w-[1200px] py-10 sm:py-14">
           {/* Back action */}
@@ -2900,36 +3118,130 @@ export default function AuditTool() {
                 <line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
             </div>
-            <h2 className="mb-2 text-xl font-bold text-zinc-900">Could not analyze website</h2>
-            <p className="mb-5 text-sm text-zinc-600">We could not access this website.</p>
-            {result.fetchError && (
-              <div className="mx-auto mb-5 max-w-md rounded-xl border border-red-200 bg-white px-4 py-3">
-                <p className="font-mono text-[11px] text-red-600">{result.fetchError}</p>
+            <h2 className="mb-2 text-xl font-bold text-zinc-900">Could not complete reliable analysis</h2>
+            <p className="mb-5 text-sm text-zinc-600">The scan did not extract enough page content to produce trustworthy findings.</p>
+
+            {/* Specific reasons from scanQuality */}
+            {result.scanQuality.reasons.length > 0 && (
+              <div className="mx-auto mb-6 max-w-md text-left">
+                <p className="mb-2 font-mono text-[11px] font-semibold uppercase tracking-widest text-zinc-500">Why this happened</p>
+                <ul className="space-y-1.5">
+                  {result.scanQuality.reasons.map((r) => (
+                    <li key={r} className="flex items-start gap-2 text-sm text-zinc-600">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-400" />
+                      {r}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
-            <div className="mx-auto mb-6 max-w-sm text-left">
-              <p className="mb-2 font-mono text-[11px] font-semibold uppercase tracking-widest text-zinc-500">Possible reasons</p>
-              <ul className="space-y-1.5">
-                {["Website blocks automated crawlers", "Authentication or login required", "Temporary network issue", "Client-rendered SPA (no server-side HTML)"].map((r) => (
-                  <li key={r} className="flex items-start gap-2 text-sm text-zinc-600">
-                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-red-300" />
-                    {r}
-                  </li>
-                ))}
-              </ul>
-            </div>
+
             <div className="flex flex-wrap items-center justify-center gap-3">
               <button
                 onClick={reset}
                 className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-700"
               >
-                Try a different URL
+                Try another public URL
               </button>
               <button
                 onClick={viewExampleAudit}
                 className="rounded-xl border border-zinc-200 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-700 transition-colors hover:border-zinc-400"
               >
                 See example audit
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── YELLOW gate — re-evaluate with current screenshot state ─────────────
+    // GREEN requires screenshot OR confidence ≥ 90 (see getScanTrafficLight).
+    // If screenshot has since loaded, a formerly-YELLOW scan may now be GREEN
+    // and the modal clears automatically. If scanGateConfirmed is already true
+    // (user confirmed, or scan was auto-confirmed GREEN), skip the modal.
+    const trafficLight = getScanTrafficLight(result.scanQuality, !!screenshotBase64);
+    if (trafficLight === "yellow" && !scanGateConfirmed) {
+      return (
+        <div ref={resultRef} className="mx-auto max-w-[1200px] py-10 sm:py-14">
+          {/* Back link */}
+          <div className="mb-6 flex items-center gap-3">
+            <button
+              onClick={reset}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-[11px] text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-50"
+            >
+              ← Try another URL
+            </button>
+            <span className="font-mono text-[11px] text-zinc-400">{result.domain}</span>
+          </div>
+
+          {/* Warning card — ~75% viewport height */}
+          <div className="flex min-h-[70vh] flex-col items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-8 py-14 text-center">
+            {/* Traffic light icon */}
+            <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="text-amber-600">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+
+            <h2 className="mb-3 text-2xl font-bold text-zinc-900">Limited scan quality</h2>
+            <p className="mb-2 max-w-lg text-sm leading-relaxed text-zinc-600">
+              We may not be able to scan this website reliably.
+            </p>
+            <p className="mb-7 max-w-lg text-sm leading-relaxed text-zinc-500">
+              This can happen when a website blocks automated access, requires login, loads content only after user interaction, depends on location or cookies, or uses heavy client-side rendering.
+            </p>
+
+            {/* Specific reasons from scanQuality */}
+            {result.scanQuality.reasons.length > 0 && (
+              <div className="mb-7 w-full max-w-md rounded-xl border border-amber-200 bg-white px-5 py-4 text-left">
+                <p className="mb-2.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-amber-700">Detected signals</p>
+                <ul className="space-y-1.5">
+                  {result.scanQuality.reasons.map((r) => (
+                    <li key={r} className="flex items-start gap-2 text-[13px] text-zinc-600">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                      {r}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* What this means */}
+            <div className="mb-8 w-full max-w-md text-left">
+              <p className="mb-2.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">What this means</p>
+              <ul className="space-y-1.5">
+                {[
+                  "Some visual elements may be missing from analysis",
+                  "Some interactions may not be testable",
+                  "Findings may be incomplete or less accurate than usual",
+                ].map((item) => (
+                  <li key={item} className="flex items-start gap-2 text-[13px] text-zinc-500">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-300" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <p className="mb-6 text-sm font-medium text-zinc-700">
+              Do you still want to continue with a limited audit?
+            </p>
+
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={() => setScanGateConfirmed(true)}
+                className="rounded-xl bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-700"
+              >
+                Continue with limited audit
+              </button>
+              <button
+                onClick={reset}
+                className="rounded-xl border border-zinc-200 bg-white px-6 py-2.5 text-sm font-semibold text-zinc-600 transition-colors hover:border-zinc-400"
+              >
+                Try another URL
               </button>
             </div>
           </div>
@@ -2954,12 +3266,29 @@ export default function AuditTool() {
                 <div className={`h-2 w-2 rounded-full ${isRealAudit ? "bg-green-500" : "bg-amber-500"}`} />
                 <span className="font-mono text-xs font-semibold uppercase tracking-widest text-zinc-500">Audit complete</span>
                 {isRealAudit ? (
-                  <span className="rounded-full bg-green-100 px-2 py-0.5 font-mono text-[9px] font-semibold text-green-700">
-                    ✓ Real page data
-                  </span>
+                  apiData?.analysisSource === "rendered-dom" ? (
+                    <span className="rounded-full bg-blue-100 px-2 py-0.5 font-mono text-[9px] font-semibold text-blue-700">
+                      ✓ Rendered page data
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-green-100 px-2 py-0.5 font-mono text-[9px] font-semibold text-green-700">
+                      ✓ Real page data
+                    </span>
+                  )
                 ) : (
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 font-mono text-[9px] font-semibold text-amber-700">
                     ⚠ Heuristic mode
+                  </span>
+                )}
+                {/* Scan quality badge — uses render-time traffic light */}
+                {trafficLight === "green" && (
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-mono text-[9px] font-semibold text-emerald-700">
+                    ● Reliable scan · {result.scanQuality.confidence}%
+                  </span>
+                )}
+                {trafficLight === "yellow" && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 font-mono text-[9px] font-semibold text-amber-700">
+                    ⚠ Limited scan · {result.scanQuality.confidence}%
                   </span>
                 )}
               </div>
@@ -2990,15 +3319,29 @@ export default function AuditTool() {
           {/* Context banner */}
           {siteContext && <ContextBanner context={siteContext} />}
 
-          {/* Partial analysis warning */}
-          {result.auditStatus === "partial" && (
-            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-              <span className="mt-0.5 shrink-0 text-base leading-none">⚠</span>
-              <div>
-                <p className="text-sm font-semibold text-amber-800">Limited analysis — findings may be incomplete</p>
-                <p className="mt-0.5 text-[12px] text-amber-700">
-                  The page returned very little readable content. It may rely on client-side rendering (JavaScript). Some findings are based on heuristics only.
-                </p>
+          {/* Limited scan quality warning — shown after user confirms YELLOW gate */}
+          {trafficLight === "yellow" && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 shrink-0 text-base leading-none">⚠</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-amber-800">Limited scan quality — findings may be incomplete</p>
+                    <span className="rounded-full bg-amber-200 px-2 py-0.5 font-mono text-[9px] font-bold text-amber-800">
+                      {result.scanQuality.confidence}% confidence
+                    </span>
+                  </div>
+                  {result.scanQuality.reasons.length > 0 && (
+                    <ul className="mt-2 space-y-0.5">
+                      {result.scanQuality.reasons.map((r) => (
+                        <li key={r} className="flex items-start gap-1.5 text-[12px] text-amber-700">
+                          <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-amber-500" />
+                          {r}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             </div>
           )}

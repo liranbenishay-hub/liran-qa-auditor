@@ -22,6 +22,17 @@ interface ScanQuality {
   reasons: string[];
   /** 0–100 confidence in scan completeness */
   confidence: number;
+  /**
+   * When true, this domain is complex enough that GREEN requires screenshot confirmation.
+   * Without a screenshot the traffic light is capped at YELLOW even for reliable scans.
+   */
+  screenshotRequired?: boolean;
+  /**
+   * When true, this is a known AI-builder / SPA hosting platform (Lovable, Bolt, v0…).
+   * Static HTML shell is expected — thin DOM is not evidence of failure.
+   * A loaded screenshot is sufficient to confirm the page is accessible → GREEN.
+   */
+  isAIBuilderSite?: boolean;
 }
 type SiteType = "saas" | "ecommerce" | "devtool" | "portfolio" | "enterprise" | "marketplace" | "landing" | "ai-builder";
 type Priority = "urgent" | "important" | "later";
@@ -149,8 +160,9 @@ const RECOMMENDED_TOOLTIP: Record<ToolId, string> = {
 
 // ── Known blocked / restricted domains ───────────────────────────────────────
 /**
- * Domains that require login, use heavy bot protection, or restrict automated access.
- * Auditing these produces results from the auth/redirect page, not the product.
+ * Domains that always require login, use heavy bot protection, or redirect to
+ * an auth page.  Auditing these produces findings from the auth page, not the product.
+ * These are classified FAILED regardless of DOM content.
  */
 const KNOWN_BLOCKED_DOMAINS = new Set([
   "linkedin.com",
@@ -159,13 +171,80 @@ const KNOWN_BLOCKED_DOMAINS = new Set([
   "x.com",
   "twitter.com",
   "chat.openai.com",
+  "app.slack.com",      // always redirects to login / SSO page
+  "app.hubspot.com",    // always requires authentication
+  "app.notion.so",      // always requires authentication
+  "app.figma.com",      // always requires authentication
 ]);
 
-/** Login-page signal phrases — detected in title + H1 text */
+/**
+ * Domains that serve real public content but are complex enough
+ * (news portals, large ecommerce, SaaS homepages with heavy JS) that
+ * GREEN requires screenshot confirmation — results without a screenshot
+ * are capped at YELLOW.
+ */
+const KNOWN_COMPLEX_DOMAINS = new Set([
+  // Israeli news / media
+  "ynet.co.il",
+  "calcalist.co.il",
+  "haaretz.co.il",
+  "walla.co.il",
+  "mako.co.il",
+  "sport5.co.il",
+  "kan.org.il",
+  // Israeli ecommerce
+  "shufersal.co.il",
+  "rami-levy.co.il",
+  "ivory.co.il",
+  "bug.co.il",
+  // Large global news / ecommerce
+  "bbc.com",
+  "cnn.com",
+  "amazon.com",
+  "ebay.com",
+  "aliexpress.com",
+  // SaaS homepages that are heavy SPAs
+  "slack.com",
+  "notion.so",
+  "figma.com",
+]);
+
+/**
+ * Login-page signal phrases — detected in title + H1 text.
+ * When matched AND content is thin the page is classified FAILED
+ * because findings would reflect the auth page, not the product.
+ */
 const LOGIN_PAGE_SIGNALS = [
   "log in", "sign in", "login", "signup", "sign up",
   "join now", "authentication", "create account", "create your account",
+  "email or mobile number", "phone number", "continue with",
+  "forgot password", "reset password", "enter your password",
 ];
+
+/**
+ * Well-known platform brands — used to detect domain mismatch.
+ * If the audited URL is NOT on one of these brands but the page title/H1
+ * clearly belongs to one, the site redirected to a third-party auth page.
+ */
+const MISMATCH_BRANDS = ["facebook", "meta", "google", "apple", "microsoft", "twitter"];
+
+/**
+ * Known AI-builder / SPA-hosting platforms.
+ * These sites serve a static React/Vite shell by design — thin initial HTML is expected,
+ * not a sign of failure.  A loaded screenshot confirms the app is accessible.
+ */
+const KNOWN_AI_BUILDER_DOMAINS = new Set([
+  "lovable.app",
+  "gptengineer.app",   // Lovable's previous domain
+  "bolt.new",
+  "bolt.diy",
+  "v0.dev",
+  "replit.app",
+  "glitch.me",
+  "stackblitz.io",
+  "webcontainer.io",
+  "codesandbox.io",
+]);
 
 // ── Scan quality classifier ───────────────────────────────────────────────────
 
@@ -191,22 +270,26 @@ function computeScanQuality(
     } catch { /* ignore */ }
   }
 
+  // ── Domain classification helpers ─────────────────────────────────────────
+  const matchesDomain = (set: Set<string>) =>
+    hostname ? [...set].some((d) => hostname === d || hostname.endsWith(`.${d}`)) : false;
+
+  const isBlockedDomain    = matchesDomain(KNOWN_BLOCKED_DOMAINS);
+  const isComplexDomain    = matchesDomain(KNOWN_COMPLEX_DOMAINS);
+  const isAIBuilderSite    = matchesDomain(KNOWN_AI_BUILDER_DOMAINS);
+
   // ── FAILED: known blocked / login-heavy domain ─────────────────────────────
-  if (hostname) {
-    const isBlocked = [...KNOWN_BLOCKED_DOMAINS].some(
-      (d) => hostname === d || hostname.endsWith(`.${d}`),
-    );
-    if (isBlocked) {
-      return {
-        status: "failed",
-        reasons: [
-          "This domain typically requires login, uses bot protection, or restricts automated access",
-          "Audit findings would be based on a login or redirect page, not the actual product",
-        ],
-        confidence: 0,
-      };
-    }
+  if (isBlockedDomain) {
+    return {
+      status: "failed",
+      reasons: [
+        "This domain typically requires login, uses bot protection, or redirects to an authentication page",
+        "Audit findings would be based on a login or redirect page, not the actual product",
+      ],
+      confidence: 0,
+    };
   }
+
   // ── FAILED: API error or null data ─────────────────────────────────────────
   if (!data || fetchError) {
     const reasons: string[] = [];
@@ -223,12 +306,64 @@ function computeScanQuality(
   const wordCount  = data.wordCount;
   const signalCount = [hasTitle, hasH1, hasButtons, hasLinks, hasMeta].filter(Boolean).length;
 
-  // ── FAILED: login / auth page detected ────────────────────────────────────
-  // If the page looks like a login screen, findings would reflect the auth page, not the product.
-  // Only fire this when content is thin (login pages can have lots of text on marketing sites).
   const titleAndH1 = [data.title ?? "", ...data.h1Tags].join(" ").toLowerCase();
   const isLoginPage = LOGIN_PAGE_SIGNALS.some((s) => titleAndH1.includes(s));
-  if (isLoginPage && wordCount < 300) {
+
+  // ── AI-builder SPA override — rendered DOM is the source of truth ───────────
+  // For Lovable / Bolt / v0 etc., the static HTML is always a shell by design.
+  // When the server-side Puppeteer pass extracted meaningful rendered DOM,
+  // treat it as authoritative and classify RELIABLE immediately.
+  if (isAIBuilderSite && data.analysisSource === "rendered-dom" && !isLoginPage) {
+    const renderedSignals = [hasTitle, hasH1, hasButtons, hasLinks, hasMeta].filter(Boolean).length;
+    if (renderedSignals >= 3 && wordCount >= 50) {
+      // Confidence ≥ 90 → GREEN even without screenshot; screenshot is then a bonus.
+      const conf = Math.min(95, Math.round(
+        68 +
+          (hasTitle   ? 5 : 0) +
+          (hasH1      ? 5 : 0) +
+          (hasMeta    ? 4 : 0) +
+          (hasButtons ? 4 : 0) +
+          (Math.min(wordCount, 400) / 400) * 9,
+      ));
+      return { status: "reliable", reasons: [], confidence: conf, isAIBuilderSite: true };
+    }
+  }
+
+  // ── AI-builder SPA fallback — thin static shell is expected, not a failure ──
+  // If rendered DOM extraction timed out or was skipped, the static HTML will be
+  // nearly empty (React/Vite shell).  Mark as LIMITED so the screenshot can
+  // upgrade it to GREEN via getScanTrafficLight; don't hard-block as FAILED.
+  if (isAIBuilderSite && signalCount <= 2 && wordCount < 40 && !isLoginPage) {
+    return {
+      status: "limited",
+      reasons: [
+        "Static HTML shell detected — this is a React/Vite SPA whose content renders client-side",
+        "Screenshot availability will confirm whether the app loaded successfully",
+      ],
+      confidence: 40,
+      isAIBuilderSite: true,
+    };
+  }
+
+  // ── FAILED: domain mismatch — page belongs to a different platform ─────────
+  // e.g. app.slack.com redirected to Facebook's own login screen
+  const mismatchBrand = MISMATCH_BRANDS.find(
+    (b) => titleAndH1.includes(b) && hostname && !hostname.includes(b),
+  );
+  if (mismatchBrand && isLoginPage) {
+    return {
+      status: "failed",
+      reasons: [
+        `Page appears to be a ${mismatchBrand.charAt(0).toUpperCase() + mismatchBrand.slice(1)} login screen — the requested site redirected to a third-party authentication page`,
+        "Audit findings would not reflect the intended website's content or UX",
+      ],
+      confidence: 0,
+    };
+  }
+
+  // ── FAILED: login / auth page detected ────────────────────────────────────
+  // Raise the threshold to 500 words so we catch more login-with-marketing-copy pages.
+  if (isLoginPage && wordCount < 500) {
     return {
       status: "failed",
       reasons: [
@@ -247,7 +382,7 @@ function computeScanQuality(
     if (!hasTitle && !hasH1) reasons.push("No page title or H1 detected");
     if (!hasButtons && !hasLinks) reasons.push("No buttons or links found — interactive structure unverifiable");
     reasons.push("Insufficient DOM content to produce reliable findings");
-    return { status: "failed", reasons, confidence: 5 };
+    return { status: "failed", reasons, confidence: 5, screenshotRequired: isComplexDomain };
   }
 
   // ── Collect LIMITED signals ────────────────────────────────────────────────
@@ -281,7 +416,13 @@ function computeScanQuality(
         20 + signalCount * 7 + Math.min(wordCount, 300) / 300 * 20 + (hasTitle ? 5 : 0),
       ),
     );
-    return { status: "limited", reasons: limitedReasons, confidence: Math.round(confidence) };
+    return {
+      status: "limited",
+      reasons: limitedReasons,
+      confidence: Math.round(confidence),
+      screenshotRequired: isComplexDomain,
+      isAIBuilderSite,
+    };
   }
 
   // ── RELIABLE ───────────────────────────────────────────────────────────────
@@ -296,7 +437,13 @@ function computeScanQuality(
         (Math.min(wordCount, 500) / 500) * 10,
     ),
   );
-  return { status: "reliable", reasons: [], confidence };
+  return {
+    status: "reliable",
+    reasons: [],
+    confidence,
+    screenshotRequired: isComplexDomain,
+    isAIBuilderSite,
+  };
 }
 
 // ── Traffic-light display gate ────────────────────────────────────────────────
@@ -314,9 +461,17 @@ function computeScanQuality(
  */
 function getScanTrafficLight(quality: ScanQuality, screenshotAvailable: boolean): "green" | "yellow" | "red" {
   if (quality.status === "failed") return "red";
+
+  // AI-builder / SPA sites: screenshot is the authoritative confirmation signal.
+  // A loaded screenshot proves the app rendered correctly regardless of static DOM thinness.
+  // Login-page and domain-mismatch failures are still caught before this point (status="failed").
+  if (quality.isAIBuilderSite && screenshotAvailable) return "green";
+
   if (quality.status === "limited") return "yellow";
   if (quality.confidence < 80) return "yellow";
-  // Without screenshot, require exceptionally strong DOM (≥ 90) for GREEN
+  // Complex/news/ecommerce domains ALWAYS require screenshot confirmation for GREEN
+  if (quality.screenshotRequired && !screenshotAvailable) return "yellow";
+  // All other domains: without screenshot, require very strong DOM (≥ 90) for GREEN
   if (!screenshotAvailable && quality.confidence < 90) return "yellow";
   return "green";
 }

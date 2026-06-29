@@ -59,6 +59,18 @@
   .builder-float-g { animation: none; }
 }
 
+/* ── Inspector view — per-finding fade animation ──────────────────────────── */
+@keyframes fadeInFast {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+/* scrollbar-none utility — hides scrollbar while keeping scroll functionality */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

@@ -2446,6 +2446,11 @@ export default function AuditTool() {
   // GREEN scans auto-confirm. RED scans never show findings regardless of this value.
   const [scanGateConfirmed, setScanGateConfirmed] = useState(false);
 
+  // Inspector view state — "table" is the default; "inspector" is the Jira-style two-panel view
+  const [viewMode, setViewMode] = useState<"table" | "inspector">("table");
+  const [inspectorFindingId, setInspectorFindingId] = useState<string | null>(null);
+  const [inspectorActiveTab, setInspectorActiveTab] = useState<ToolId>("lovable");
+
   // Demo iteration mode — simulated progress card
   const [demoOpen, setDemoOpen] = useState(false);
   const [demoPhase, setDemoPhase] = useState(0);
@@ -3701,97 +3706,86 @@ export default function AuditTool() {
             )}
           </div>
 
-          {/* Priority note */}
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2.5">
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
-              Prioritised by:
-            </span>
-            {topCats.map((cat, i) => (
-              <span key={cat} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-2.5 py-0.5 font-mono text-[10px] text-zinc-600">
-                <span className={`h-1.5 w-1.5 rounded-full ${CAT_DOTS[cat] ?? "bg-zinc-400"}`} />
-                <span className={i === 0 ? "font-semibold text-zinc-800" : ""}>{cat}</span>
+          {/* Priority note + view toggle */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2.5">
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+                Prioritised by:
               </span>
-            ))}
-            <span className="ml-auto font-mono text-[10px] text-zinc-400">
-              Fix prompt → on any row
-            </span>
-          </div>
-
-          {/* Findings table */}
-          <div className="overflow-hidden rounded-xl border border-zinc-200">
-            {/* Desktop header */}
-            <div className="hidden sm:grid sm:grid-cols-[90px_120px_1fr_1fr_1fr_70px_70px_160px] border-b border-zinc-200 bg-zinc-50 px-4 py-3 gap-3">
-              {["Priority","Category","Issue","Why it matters","Suggested fix","Effort","Impact",""].map((h) => (
-                <div key={h} className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{h}</div>
+              {topCats.map((cat, i) => (
+                <span key={cat} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-2.5 py-0.5 font-mono text-[10px] text-zinc-600">
+                  <span className={`h-1.5 w-1.5 rounded-full ${CAT_DOTS[cat] ?? "bg-zinc-400"}`} />
+                  <span className={i === 0 ? "font-semibold text-zinc-800" : ""}>{cat}</span>
+                </span>
               ))}
+              <span className="hidden sm:inline ml-auto font-mono text-[10px] text-zinc-400">
+                {viewMode === "table" ? "Fix prompt → on any row" : "Select a finding to inspect"}
+              </span>
             </div>
 
-            <div className="divide-y divide-zinc-100">
-              {sortedFindings.map((f) => {
-                const cfg = P_CONFIG[f.priority];
-                return (
-                  <div key={f.id} className={`${cfg.rowBg} border-l-4 ${cfg.borderL}`}>
+            {/* View toggle */}
+            <div className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-1 shrink-0">
+              <button
+                onClick={() => setViewMode("table")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold transition-all ${
+                  viewMode === "table"
+                    ? "bg-white text-zinc-900 shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-700"
+                }`}
+              >
+                {/* Table icon */}
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <rect x="0.5" y="0.5" width="11" height="11" rx="1" stroke="currentColor" strokeOpacity=".5"/>
+                  <line x1="0.5" y1="4" x2="11.5" y2="4" stroke="currentColor" strokeOpacity=".5"/>
+                  <line x1="0.5" y1="8" x2="11.5" y2="8" stroke="currentColor" strokeOpacity=".5"/>
+                  <line x1="4" y1="0.5" x2="4" y2="11.5" stroke="currentColor" strokeOpacity=".5"/>
+                </svg>
+                Table
+              </button>
+              <button
+                onClick={() => {
+                  setViewMode("inspector");
+                  setInspectorFindingId((prev) => prev ?? sortedFindings[0]?.id ?? null);
+                  // Sync inspector tab with the user's preferred/detected builder
+                  const tabFromPreferred = preferredBuilder ? getRecommendedTab(preferredBuilder) : null;
+                  const tabFromDetected = getRecommendedTab(result.detectedBuilder ?? null);
+                  setInspectorActiveTab(tabFromPreferred ?? tabFromDetected ?? "lovable");
+                }}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold transition-all ${
+                  viewMode === "inspector"
+                    ? "bg-white text-zinc-900 shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-700"
+                }`}
+              >
+                {/* Inspector / split-panel icon */}
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <rect x="0.5" y="0.5" width="11" height="11" rx="1" stroke="currentColor" strokeOpacity=".5"/>
+                  <line x1="5" y1="0.5" x2="5" y2="11.5" stroke="currentColor" strokeOpacity=".5"/>
+                  <line x1="5" y1="7" x2="11.5" y2="7" stroke="currentColor" strokeOpacity=".5"/>
+                </svg>
+                Inspector
+              </button>
+            </div>
+          </div>
 
-                    {/* Mobile card */}
-                    <div className="block p-4 sm:hidden">
-                      {(() => {
-                        const conf = calculateConfidence(f, apiData, isRealAudit);
-                        const confBadge = conf.level === "high"
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : conf.level === "medium"
-                          ? "bg-sky-50 text-sky-700 border-sky-200"
-                          : "bg-zinc-50 text-zinc-500 border-zinc-200";
-                        return (
-                          <div className="mb-2 flex flex-wrap items-center gap-2">
-                            <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase ${cfg.badge}`}>
-                              <span className={`h-1 w-1 rounded-full ${cfg.dot}`} />
-                              {cfg.label}
-                            </span>
-                            <span className="font-mono text-[10px] text-zinc-500">{f.category}</span>
-                            <span className={`inline-flex items-center rounded border px-2 py-0.5 font-mono text-[10px] font-semibold ${confBadge}`}>
-                              {conf.score}%{" "}
-                              <span className="ml-1 font-normal opacity-70">
-                                {conf.level === "high" ? "High" : conf.level === "medium" ? "Med" : "Low"}
-                              </span>
-                            </span>
-                          </div>
-                        );
-                      })()}
-                      <p className="mb-1.5 text-sm font-semibold text-zinc-900">{f.issue}</p>
-                      <p className="mb-3 text-xs text-zinc-500 leading-relaxed">{f.whyItMatters}</p>
-                      <div className="mb-3 rounded bg-white/80 border border-zinc-200 p-2.5">
-                        <p className="mb-1 font-mono text-[10px] font-semibold uppercase text-zinc-400">Fix</p>
-                        <p className="text-xs text-zinc-700">{f.suggestedFix}</p>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex gap-3">
-                          <span className="font-mono text-[10px] text-zinc-400">Effort: {f.effort}</span>
-                          <span className="font-mono text-[10px] text-zinc-400">Impact: {f.impact}</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => openEvidenceDrawer(f)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-[11px] text-zinc-600 hover:border-zinc-400 transition-colors"
-                          >
-                            Evidence
-                          </button>
-                          <button
-                            onClick={() => openDrawer(f)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-zinc-900 px-3 py-1.5 font-mono text-[11px] text-white hover:bg-zinc-700 transition-colors"
-                          >
-                            Fix prompt →
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+          {/* ── TABLE VIEW (default) ─────────────────────────────────────────── */}
+          {viewMode === "table" && (
+            <div className="overflow-hidden rounded-xl border border-zinc-200">
+              {/* Desktop header */}
+              <div className="hidden sm:grid sm:grid-cols-[90px_120px_1fr_1fr_1fr_70px_70px_160px] border-b border-zinc-200 bg-zinc-50 px-4 py-3 gap-3">
+                {["Priority","Category","Issue","Why it matters","Suggested fix","Effort","Impact",""].map((h) => (
+                  <div key={h} className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{h}</div>
+                ))}
+              </div>
 
-                    {/* Desktop row */}
-                    <div className="hidden sm:grid sm:grid-cols-[90px_120px_1fr_1fr_1fr_70px_70px_160px] items-start gap-3 px-4 py-4">
-                      <div className="flex flex-col gap-1.5">
-                        <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[10px] font-semibold uppercase ${cfg.badge}`}>
-                          <span className={`h-1 w-1 rounded-full ${cfg.dot}`} />
-                          {cfg.label}
-                        </span>
+              <div className="divide-y divide-zinc-100">
+                {sortedFindings.map((f) => {
+                  const cfg = P_CONFIG[f.priority];
+                  return (
+                    <div key={f.id} className={`${cfg.rowBg} border-l-4 ${cfg.borderL}`}>
+
+                      {/* Mobile card */}
+                      <div className="block p-4 sm:hidden">
                         {(() => {
                           const conf = calculateConfidence(f, apiData, isRealAudit);
                           const confBadge = conf.level === "high"
@@ -3800,40 +3794,362 @@ export default function AuditTool() {
                             ? "bg-sky-50 text-sky-700 border-sky-200"
                             : "bg-zinc-50 text-zinc-500 border-zinc-200";
                           return (
-                            <span className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[10px] ${confBadge}`} title={conf.reason}>
-                              <span className="font-semibold">{conf.score}%</span>
-                              <span className="opacity-60">{conf.level === "high" ? "High" : conf.level === "medium" ? "Med" : "Low"}</span>
-                            </span>
+                            <div className="mb-2 flex flex-wrap items-center gap-2">
+                              <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase ${cfg.badge}`}>
+                                <span className={`h-1 w-1 rounded-full ${cfg.dot}`} />
+                                {cfg.label}
+                              </span>
+                              <span className="font-mono text-[10px] text-zinc-500">{f.category}</span>
+                              <span className={`inline-flex items-center rounded border px-2 py-0.5 font-mono text-[10px] font-semibold ${confBadge}`}>
+                                {conf.score}%{" "}
+                                <span className="ml-1 font-normal opacity-70">
+                                  {conf.level === "high" ? "High" : conf.level === "medium" ? "Med" : "Low"}
+                                </span>
+                              </span>
+                            </div>
                           );
                         })()}
+                        <p className="mb-1.5 text-sm font-semibold text-zinc-900">{f.issue}</p>
+                        <p className="mb-3 text-xs text-zinc-500 leading-relaxed">{f.whyItMatters}</p>
+                        <div className="mb-3 rounded bg-white/80 border border-zinc-200 p-2.5">
+                          <p className="mb-1 font-mono text-[10px] font-semibold uppercase text-zinc-400">Fix</p>
+                          <p className="text-xs text-zinc-700">{f.suggestedFix}</p>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex gap-3">
+                            <span className="font-mono text-[10px] text-zinc-400">Effort: {f.effort}</span>
+                            <span className="font-mono text-[10px] text-zinc-400">Impact: {f.impact}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => openEvidenceDrawer(f)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-[11px] text-zinc-600 hover:border-zinc-400 transition-colors"
+                            >
+                              Evidence
+                            </button>
+                            <button
+                              onClick={() => openDrawer(f)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-zinc-900 px-3 py-1.5 font-mono text-[11px] text-white hover:bg-zinc-700 transition-colors"
+                            >
+                              Fix prompt →
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <div className="font-mono text-xs text-zinc-600">{f.category}</div>
-                      <div className="text-xs font-semibold text-zinc-900">{f.issue}</div>
-                      <div className="text-xs leading-relaxed text-zinc-500">{f.whyItMatters}</div>
-                      <div className="text-xs leading-relaxed text-zinc-600">{f.suggestedFix}</div>
-                      <div><EffortBadge v={f.effort} /></div>
-                      <div><ImpactBadge v={f.impact} /></div>
-                      <div className="flex flex-col gap-1.5">
-                        <button
-                          onClick={() => openDrawer(f)}
-                          className="inline-flex items-center justify-center gap-1 rounded-lg bg-zinc-900 px-3 py-2 font-mono text-[11px] text-white hover:bg-zinc-700 transition-colors whitespace-nowrap"
-                        >
-                          Fix prompt →
-                        </button>
-                        <button
-                          onClick={() => openEvidenceDrawer(f)}
-                          className="inline-flex items-center justify-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-[11px] text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-colors whitespace-nowrap"
-                        >
-                          Show evidence
-                        </button>
+
+                      {/* Desktop row */}
+                      <div className="hidden sm:grid sm:grid-cols-[90px_120px_1fr_1fr_1fr_70px_70px_160px] items-start gap-3 px-4 py-4">
+                        <div className="flex flex-col gap-1.5">
+                          <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[10px] font-semibold uppercase ${cfg.badge}`}>
+                            <span className={`h-1 w-1 rounded-full ${cfg.dot}`} />
+                            {cfg.label}
+                          </span>
+                          {(() => {
+                            const conf = calculateConfidence(f, apiData, isRealAudit);
+                            const confBadge = conf.level === "high"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : conf.level === "medium"
+                              ? "bg-sky-50 text-sky-700 border-sky-200"
+                              : "bg-zinc-50 text-zinc-500 border-zinc-200";
+                            return (
+                              <span className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[10px] ${confBadge}`} title={conf.reason}>
+                                <span className="font-semibold">{conf.score}%</span>
+                                <span className="opacity-60">{conf.level === "high" ? "High" : conf.level === "medium" ? "Med" : "Low"}</span>
+                              </span>
+                            );
+                          })()}
+                        </div>
+                        <div className="font-mono text-xs text-zinc-600">{f.category}</div>
+                        <div className="text-xs font-semibold text-zinc-900">{f.issue}</div>
+                        <div className="text-xs leading-relaxed text-zinc-500">{f.whyItMatters}</div>
+                        <div className="text-xs leading-relaxed text-zinc-600">{f.suggestedFix}</div>
+                        <div><EffortBadge v={f.effort} /></div>
+                        <div><ImpactBadge v={f.impact} /></div>
+                        <div className="flex flex-col gap-1.5">
+                          <button
+                            onClick={() => openDrawer(f)}
+                            className="inline-flex items-center justify-center gap-1 rounded-lg bg-zinc-900 px-3 py-2 font-mono text-[11px] text-white hover:bg-zinc-700 transition-colors whitespace-nowrap"
+                          >
+                            Fix prompt →
+                          </button>
+                          <button
+                            onClick={() => openEvidenceDrawer(f)}
+                            className="inline-flex items-center justify-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-[11px] text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-colors whitespace-nowrap"
+                          >
+                            Show evidence
+                          </button>
+                        </div>
                       </div>
+
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── INSPECTOR VIEW ───────────────────────────────────────────────── */}
+          {viewMode === "inspector" && (() => {
+            const inspectorFinding =
+              sortedFindings.find((f) => f.id === inspectorFindingId) ??
+              sortedFindings[0] ??
+              null;
+            if (!inspectorFinding) return null;
+
+            const inspFix = buildFixPrompts(inspectorFinding, result.detectedBuilder);
+            const inspCfg = P_CONFIG[inspectorFinding.priority];
+            const inspConf = calculateConfidence(inspectorFinding, apiData, isRealAudit);
+
+            // Tab ordering — same logic as fix prompt drawer
+            const tabFromPreferred = preferredBuilder ? getRecommendedTab(preferredBuilder) : null;
+            const tabFromDetected  = getRecommendedTab(result.detectedBuilder ?? null);
+            const inspRecommendedTab: ToolId | null = tabFromPreferred ?? tabFromDetected;
+            const ALL_TABS: ToolId[] = ["lovable", "base44", "claude", "cursor", "generic"];
+            const inspOrderedTabs: ToolId[] = inspRecommendedTab
+              ? [inspRecommendedTab, ...ALL_TABS.filter((t) => t !== inspRecommendedTab)]
+              : ALL_TABS;
+
+            return (
+              <div className="flex h-[720px] overflow-hidden rounded-xl border border-zinc-200 shadow-sm">
+
+                {/* ── LEFT PANEL — scrollable finding list ──────────────────── */}
+                <div className="flex w-[272px] shrink-0 flex-col overflow-hidden border-r border-zinc-200 bg-zinc-50">
+                  {/* Panel header */}
+                  <div className="shrink-0 border-b border-zinc-200 bg-white px-3 py-2.5">
+                    <p className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+                      {sortedFindings.length} findings
+                    </p>
+                  </div>
+                  {/* Finding cards */}
+                  <div className="flex-1 overflow-y-auto">
+                    {sortedFindings.map((f) => {
+                      const fcfg = P_CONFIG[f.priority];
+                      const fconf = calculateConfidence(f, apiData, isRealAudit);
+                      const isSelected = f.id === (inspectorFinding.id);
+                      return (
+                        <button
+                          key={f.id}
+                          onClick={() => setInspectorFindingId(f.id)}
+                          className={`group w-full border-b border-zinc-200 px-3 py-3 text-left transition-colors ${
+                            isSelected
+                              ? "border-l-[3px] border-l-blue-500 bg-white"
+                              : "border-l-[3px] border-l-transparent hover:border-l-zinc-300 hover:bg-white/60"
+                          }`}
+                        >
+                          {/* Top row: severity + category */}
+                          <div className="mb-1.5 flex items-center gap-1.5 overflow-hidden">
+                            <span className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-px font-mono text-[9px] font-semibold uppercase ${fcfg.badge}`}>
+                              <span className={`h-1 w-1 rounded-full ${fcfg.dot}`} />
+                              {fcfg.label}
+                            </span>
+                            <span className="truncate font-mono text-[9px] text-zinc-500">{f.category}</span>
+                          </div>
+                          {/* Issue title */}
+                          <p className={`mb-2 line-clamp-2 text-[12px] font-semibold leading-snug ${isSelected ? "text-zinc-900" : "text-zinc-700"}`}>
+                            {f.issue}
+                          </p>
+                          {/* Bottom row: confidence + priority dot */}
+                          <div className="flex items-center gap-2">
+                            <span className={`font-mono text-[9px] font-semibold ${
+                              fconf.level === "high" ? "text-emerald-600"
+                              : fconf.level === "medium" ? "text-sky-600"
+                              : "text-zinc-400"
+                            }`}>
+                              {fconf.score}% conf
+                            </span>
+                            <span className={`ml-auto h-2 w-2 shrink-0 rounded-full ${fcfg.dot}`} />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ── RIGHT PANEL — inspector detail ────────────────────────── */}
+                <div className="flex flex-1 flex-col overflow-hidden">
+
+                  {/* ── Screenshot area ───────────────────────────────────── */}
+                  <div className="shrink-0 bg-zinc-950" style={{ height: "370px" }}>
+                    {/* Browser chrome + finding badge */}
+                    <div className="flex items-center gap-1.5 px-3 pt-3 pb-2">
+                      <span className="h-2 w-2 rounded-full bg-zinc-700" />
+                      <span className="h-2 w-2 rounded-full bg-zinc-700" />
+                      <span className="h-2 w-2 rounded-full bg-zinc-700" />
+                      <span className="ml-2 flex-1 truncate rounded bg-zinc-800 px-3 py-0.5 font-mono text-[9px] text-zinc-500">
+                        {url}
+                      </span>
+                      <span className={`shrink-0 inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[9px] font-semibold ${inspCfg.badge}`}>
+                        <span className={`h-1 w-1 rounded-full ${inspCfg.dot}`} />
+                        {inspectorFinding.category}
+                      </span>
                     </div>
 
+                    {/* Screenshot with annotation overlay — keyed so it fades on finding switch */}
+                    <div
+                      key={inspectorFinding.id}
+                      className="animate-[fadeInFast_0.18s_ease-out] mx-3 overflow-hidden rounded-md border border-zinc-800"
+                      style={{ height: "300px" }}
+                    >
+                      {screenshotBase64 ? (
+                        <div
+                          className="group relative h-full w-full cursor-zoom-in"
+                          onClick={() => {
+                            setScreenshotModalFinding(inspectorFinding);
+                            setScreenshotModalOpen(true);
+                          }}
+                          title="Click to enlarge"
+                        >
+                          <img
+                            src={`data:image/jpeg;base64,${screenshotBase64}`}
+                            alt={`Screenshot of ${result.domain}`}
+                            className="h-full w-full object-cover object-top"
+                          />
+                          <AnnotationOverlay finding={inspectorFinding} apiData={apiData} />
+                          {/* Hover hint */}
+                          <div className="absolute inset-0 flex items-end justify-end bg-black/0 p-2 transition-colors group-hover:bg-black/20">
+                            <span className="rounded-full border border-white/20 bg-black/60 px-2 py-1 font-mono text-[9px] font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100">
+                              Enlarge ↗
+                            </span>
+                          </div>
+                        </div>
+                      ) : screenshotLoading ? (
+                        <div className="flex h-full items-center justify-center bg-zinc-900">
+                          <div className="text-center">
+                            <div className="mx-auto mb-3 h-6 w-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
+                            <p className="font-mono text-[10px] text-zinc-500">Capturing screenshot…</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex h-full flex-col items-center justify-center gap-2 bg-zinc-900">
+                          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-zinc-700" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <polyline points="21 15 16 10 5 21" />
+                          </svg>
+                          <p className="font-mono text-[10px] text-zinc-600">No screenshot available</p>
+                          <p className="font-mono text-[9px] text-zinc-700">Annotations based on DOM signals</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
+
+                  {/* ── Detail panel (scrollable) ─────────────────────────── */}
+                  <div className="flex-1 overflow-y-auto bg-white">
+                    <div className="space-y-0 divide-y divide-zinc-100">
+
+                      {/* Finding title */}
+                      <div className="px-6 py-4">
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] font-semibold ${inspCfg.badge}`}>
+                            <span className={`h-1 w-1 rounded-full ${inspCfg.dot}`} />
+                            {inspCfg.label}
+                          </span>
+                          <span className="font-mono text-[10px] text-zinc-500">{inspectorFinding.category}</span>
+                          <span className={`rounded border px-1.5 py-px font-mono text-[9px] font-semibold ${
+                            inspConf.level === "high" ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : inspConf.level === "medium" ? "border-sky-200 bg-sky-50 text-sky-700"
+                            : "border-zinc-200 bg-zinc-50 text-zinc-500"
+                          }`}>
+                            {inspConf.score}% confidence
+                          </span>
+                        </div>
+                        <h3 className="text-[15px] font-bold leading-snug text-zinc-900">
+                          {inspectorFinding.issue}
+                        </h3>
+                      </div>
+
+                      {/* Why this matters */}
+                      <div className="px-6 py-4">
+                        <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                          Why this matters
+                        </p>
+                        <p className="text-[13px] leading-relaxed text-zinc-700">
+                          {inspectorFinding.whyItMatters}
+                        </p>
+                      </div>
+
+                      {/* How to fix */}
+                      <div className="px-6 py-4">
+                        <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                          How to fix
+                        </p>
+                        <p className="mb-3 text-[13px] leading-relaxed text-zinc-700">
+                          {inspectorFinding.suggestedFix}
+                        </p>
+                        <div className="flex gap-4">
+                          <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-zinc-500">
+                            <span className="font-semibold text-zinc-700">Effort:</span>
+                            {inspectorFinding.effort}
+                          </span>
+                          <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-zinc-500">
+                            <span className="font-semibold text-zinc-700">Impact:</span>
+                            {inspectorFinding.impact}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Fix prompts */}
+                      <div className="overflow-hidden bg-zinc-950">
+                        {/* Section label */}
+                        <div className="border-b border-zinc-800 px-6 py-2.5">
+                          <p className="font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                            Fix prompts
+                          </p>
+                        </div>
+                        {/* Tabs */}
+                        <div className="flex overflow-x-auto border-b border-zinc-800 px-4 pt-1 scrollbar-none">
+                          {inspOrderedTabs.map((tool) => {
+                            const isRec = tool === inspRecommendedTab;
+                            return (
+                              <button
+                                key={tool}
+                                onClick={() => setInspectorActiveTab(tool)}
+                                className={`-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 font-mono text-xs font-semibold transition-colors ${
+                                  inspectorActiveTab === tool
+                                    ? "border-white text-white"
+                                    : "border-transparent text-zinc-500 hover:text-zinc-300"
+                                }`}
+                              >
+                                {TOOL_LABELS[tool]}
+                                {isRec && (
+                                  <span className="rounded bg-violet-600 px-1.5 py-px font-mono text-[8px] font-bold leading-none text-white">
+                                    ★
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {/* Prompt content */}
+                        <div className="p-5">
+                          <div className="mb-3 flex items-center justify-between">
+                            <span className="font-mono text-[10px] text-zinc-600">
+                              {TOOL_DESCRIPTIONS[inspectorActiveTab]}
+                            </span>
+                            <button
+                              onClick={() => copyPrompt(inspectorActiveTab, inspFix[inspectorActiveTab])}
+                              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold transition-all ${
+                                copiedPrompt === inspectorActiveTab
+                                  ? "bg-green-900/70 text-green-400 ring-1 ring-green-700"
+                                  : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white"
+                              }`}
+                            >
+                              {copiedPrompt === inspectorActiveTab ? "✓ Copied" : "Copy prompt"}
+                            </button>
+                          </div>
+                          <pre className="max-h-52 overflow-y-auto whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 font-mono text-[11px] leading-relaxed text-zinc-300">
+                            {inspFix[inspectorActiveTab]}
+                          </pre>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            );
+          })()}
 
           <p className="text-center text-xs text-zinc-400">
             {isRealAudit

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { type LangCode, TRANSLATIONS } from "../locales";
 import {
   classifySiteContext,
   SITE_TYPE_LABELS,
@@ -2398,6 +2399,8 @@ const CAT_DOTS: Partial<Record<Category, string>> = {
   "Performance Perception": "bg-orange-400",
 };
 
+// i18n — see ../locales/ for all translation strings
+
 export default function AuditTool() {
   const [auditState, setAuditState] = useState<AuditState>("idle");
   const [url, setUrl] = useState("");
@@ -2450,6 +2453,16 @@ export default function AuditTool() {
   const [viewMode, setViewMode] = useState<"table" | "inspector">("table");
   const [inspectorFindingId, setInspectorFindingId] = useState<string | null>(null);
   const [inspectorActiveTab, setInspectorActiveTab] = useState<ToolId>("lovable");
+
+  // Language picker — results page only
+  const [lang, setLang] = useState<LangCode>("en");
+  useEffect(() => {
+    const saved = localStorage.getItem("audit-lang") as LangCode | null;
+    if (saved && (["en","he","ru","es"] as LangCode[]).includes(saved)) setLang(saved);
+  }, []);
+  useEffect(() => { localStorage.setItem("audit-lang", lang); }, [lang]);
+  const t = (key: string): string => TRANSLATIONS[lang]?.[key] ?? TRANSLATIONS.en[key] ?? key;
+  const isRTL = lang === "he";
 
   // Demo iteration mode — simulated progress card
   const [demoOpen, setDemoOpen] = useState(false);
@@ -3264,7 +3277,7 @@ export default function AuditTool() {
               onClick={reset}
               className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-[11px] text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-50"
             >
-              ← Try another URL
+              ← {t("tryAnotherUrl")}
             </button>
             <span className="font-mono text-[11px] text-zinc-400">{result.domain}</span>
           </div>
@@ -3278,7 +3291,7 @@ export default function AuditTool() {
                 <line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
             </div>
-            <h2 className="mb-2 text-xl font-bold text-zinc-900">Could not complete reliable analysis</h2>
+            <h2 className="mb-2 text-xl font-bold text-zinc-900">{t("couldNotComplete")}</h2>
             <p className="mb-5 text-sm text-zinc-600">The scan did not extract enough page content to produce trustworthy findings.</p>
 
             {/* Specific reasons from scanQuality */}
@@ -3301,13 +3314,13 @@ export default function AuditTool() {
                 onClick={reset}
                 className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-700"
               >
-                Try another public URL
+                {t("tryAnotherPublicUrl")}
               </button>
               <button
                 onClick={viewExampleAudit}
                 className="rounded-xl border border-zinc-200 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-700 transition-colors hover:border-zinc-400"
               >
-                See example audit
+                {t("seeExampleAudit")}
               </button>
             </div>
           </div>
@@ -3330,7 +3343,7 @@ export default function AuditTool() {
               onClick={reset}
               className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-[11px] text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-50"
             >
-              ← Try another URL
+              ← {t("tryAnotherUrl")}
             </button>
             <span className="font-mono text-[11px] text-zinc-400">{result.domain}</span>
           </div>
@@ -3346,7 +3359,7 @@ export default function AuditTool() {
               </svg>
             </div>
 
-            <h2 className="mb-3 text-2xl font-bold text-zinc-900">Limited scan quality</h2>
+            <h2 className="mb-3 text-2xl font-bold text-zinc-900">{t("limitedScan")} quality</h2>
             <p className="mb-2 max-w-lg text-sm leading-relaxed text-zinc-600">
               We may not be able to scan this website reliably.
             </p>
@@ -3371,7 +3384,7 @@ export default function AuditTool() {
 
             {/* What this means */}
             <div className="mb-8 w-full max-w-md text-left">
-              <p className="mb-2.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">What this means</p>
+              <p className="mb-2.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{t("whatThisMeans").toUpperCase()}</p>
               <ul className="space-y-1.5">
                 {[
                   "Some visual elements may be missing from analysis",
@@ -3395,13 +3408,13 @@ export default function AuditTool() {
                 onClick={() => setScanGateConfirmed(true)}
                 className="rounded-xl bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-700"
               >
-                Continue with limited audit
+                {t("continueWithLimitedAudit")}
               </button>
               <button
                 onClick={reset}
                 className="rounded-xl border border-zinc-200 bg-white px-6 py-2.5 text-sm font-semibold text-zinc-600 transition-colors hover:border-zinc-400"
               >
-                Try another URL
+                {t("tryAnotherUrl")}
               </button>
             </div>
           </div>
@@ -3417,38 +3430,38 @@ export default function AuditTool() {
 
     return (
       <>
-        <div ref={resultRef} className="mx-auto max-w-[1200px] space-y-5 py-10 sm:py-14">
+        <div ref={resultRef} className="mx-auto max-w-[1200px] space-y-5 py-10 sm:py-14" dir={isRTL ? "rtl" : "ltr"}>
 
           {/* Actions bar */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <div className={`h-2 w-2 rounded-full ${isRealAudit ? "bg-green-500" : "bg-amber-500"}`} />
-                <span className="font-mono text-xs font-semibold uppercase tracking-widest text-zinc-500">Audit complete</span>
+                <span className="font-mono text-xs font-semibold uppercase tracking-widest text-zinc-500">{t("auditComplete").toUpperCase()}</span>
                 {isRealAudit ? (
                   apiData?.analysisSource === "rendered-dom" ? (
                     <span className="rounded-full bg-blue-100 px-2 py-0.5 font-mono text-[9px] font-semibold text-blue-700">
-                      ✓ Rendered page data
+                      ✓ {t("renderedPageData")}
                     </span>
                   ) : (
                     <span className="rounded-full bg-green-100 px-2 py-0.5 font-mono text-[9px] font-semibold text-green-700">
-                      ✓ Real page data
+                      ✓ {t("realPageData")}
                     </span>
                   )
                 ) : (
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 font-mono text-[9px] font-semibold text-amber-700">
-                    ⚠ Heuristic mode
+                    ⚠ {t("heuristicMode")}
                   </span>
                 )}
                 {/* Scan quality badge — uses render-time traffic light */}
                 {trafficLight === "green" && (
                   <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-mono text-[9px] font-semibold text-emerald-700">
-                    ● Reliable scan · {result.scanQuality.confidence}%
+                    ● {t("reliableScan")} · {result.scanQuality.confidence}%
                   </span>
                 )}
                 {trafficLight === "yellow" && (
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 font-mono text-[9px] font-semibold text-amber-700">
-                    ⚠ Limited scan · {result.scanQuality.confidence}%
+                    ⚠ {t("limitedScan")} · {result.scanQuality.confidence}%
                   </span>
                 )}
               </div>
@@ -3466,12 +3479,28 @@ export default function AuditTool() {
                 </p>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
+              {/* Language picker — results page only */}
+              <div className="flex items-center rounded-lg border border-zinc-200 bg-zinc-50 p-0.5">
+                {(["en","he","ru","es"] as LangCode[]).map((code) => (
+                  <button
+                    key={code}
+                    onClick={() => setLang(code)}
+                    className={`rounded-md px-2.5 py-1 font-mono text-[11px] font-semibold uppercase transition-all ${
+                      lang === code
+                        ? "bg-white text-zinc-900 shadow-sm"
+                        : "text-zinc-400 hover:text-zinc-600"
+                    }`}
+                  >
+                    {code}
+                  </button>
+                ))}
+              </div>
               <button onClick={copyFullReport} className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:border-zinc-400">
-                {copied ? "✓ Copied" : "Copy report"}
+                {copied ? t("copied") : t("copyReport")}
               </button>
               <button onClick={reset} className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:border-zinc-400">
-                New audit
+                {t("newAudit")}
               </button>
             </div>
           </div>
@@ -3486,7 +3515,7 @@ export default function AuditTool() {
                 <span className="mt-0.5 shrink-0 text-base leading-none">⚠</span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold text-amber-800">Limited scan quality — findings may be incomplete</p>
+                    <p className="text-sm font-semibold text-amber-800">{t("limitedScanBanner")}</p>
                     <span className="rounded-full bg-amber-200 px-2 py-0.5 font-mono text-[9px] font-bold text-amber-800">
                       {result.scanQuality.confidence}% confidence
                     </span>
@@ -3508,10 +3537,10 @@ export default function AuditTool() {
 
           {/* Summary cards */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <SummaryCard label="Overall score" value={`${result.overallScore}/100`} sub={`${urgentCount} urgent · ${importantCount} important`} accent="zinc" />
-            <SummaryCard label="Top urgent issue" value={urgentCount > 0 ? `${urgentCount} found` : "None"} sub={result.topUrgentIssue} accent="red" />
-            <SummaryCard label="Best quick win" value="Low effort" sub={result.bestQuickWin} accent="green" />
-            <SummaryCard label="Main product risk" value="Review" sub={result.mainProductRisk} accent="amber" />
+            <SummaryCard label={t("overallScore")} value={`${result.overallScore}/100`} sub={`${urgentCount} urgent · ${importantCount} important`} accent="zinc" />
+            <SummaryCard label={t("topUrgentIssue")} value={urgentCount > 0 ? `${urgentCount} found` : "None"} sub={result.topUrgentIssue} accent="red" />
+            <SummaryCard label={t("bestQuickWin")} value="Low effort" sub={result.bestQuickWin} accent="green" />
+            <SummaryCard label={t("mainProductRisk")} value="Review" sub={result.mainProductRisk} accent="amber" />
           </div>
 
           {/* ── Page Snapshot ──────────────────────────────────────────────── */}
@@ -3528,7 +3557,7 @@ export default function AuditTool() {
             <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50 px-4 py-2.5">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500 shrink-0">
-                  Page Snapshot
+                  {t("pageSnapshot")}
                 </span>
                 <span className="rounded border border-zinc-200 bg-white px-2 py-0.5 font-mono text-[9px] text-zinc-500 truncate max-w-[280px]">
                   {url}
@@ -3542,24 +3571,24 @@ export default function AuditTool() {
                       ? "border-orange-300 bg-orange-50 text-orange-700"
                       : "border-amber-300 bg-amber-50 text-amber-700"
                   }`}>
-                    ▲ Visual focus active
+                    {t("visualFocusActive")}
                   </span>
                 )}
               </div>
               {screenshotLoading && (
                 <span className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-2 py-0.5 font-mono text-[9px] text-zinc-500">
                   <span className="inline-block h-1.5 w-1.5 animate-ping rounded-full bg-zinc-400" />
-                  Capturing…
+                  {t("capturing")}
                 </span>
               )}
               {screenshotBase64 && !screenshotLoading && !evidenceDrawerOpen && (
                 <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 font-mono text-[9px] font-semibold text-green-700">
-                  ✓ Live screenshot
+                  {t("liveScreenshot")}
                 </span>
               )}
               {(screenshotError || (!screenshotLoading && !screenshotBase64)) && !screenshotLoading && !evidenceDrawerOpen && (
                 <span className="rounded-full border border-zinc-200 bg-white px-2 py-0.5 font-mono text-[9px] text-zinc-400">
-                  HTML signals only
+                  {t("htmlSignalsOnly")}
                 </span>
               )}
             </div>
@@ -3577,9 +3606,9 @@ export default function AuditTool() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-zinc-700">Capturing screenshot…</p>
+                  <p className="text-sm font-semibold text-zinc-700">{t("capturingScreenshot")}</p>
                   <p className="mt-0.5 text-xs text-zinc-400">
-                    Launching browser and rendering the page. This takes 5–20 seconds, especially on first run.
+                    {t("screenshotCaptureDesc")}
                   </p>
                 </div>
               </div>
@@ -3625,7 +3654,7 @@ export default function AuditTool() {
                         <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                         <line x1="11" y1="8" x2="11" y2="14" /><line x1="8" y1="11" x2="14" y2="11" />
                       </svg>
-                      <span className="font-mono text-[10px] font-semibold text-white">Enlarge</span>
+                      <span className="font-mono text-[10px] font-semibold text-white">{t("enlargeBtn")}</span>
                     </div>
                   </div>
                 </div>
@@ -3647,7 +3676,7 @@ export default function AuditTool() {
                       </span>
                     </>
                   )}
-                  <span className="ml-auto font-mono text-[9px] text-zinc-600">click to enlarge</span>
+                  <span className="ml-auto font-mono text-[9px] text-zinc-600">{t("clickToEnlarge")}</span>
                 </div>
               </div>
             )}
@@ -3662,13 +3691,13 @@ export default function AuditTool() {
                       <circle cx="8.5" cy="8.5" r="1.5" />
                       <polyline points="21 15 16 10 5 21" />
                     </svg>
-                    <p className="font-mono text-[8px] text-zinc-300">No screenshot</p>
+                    <p className="font-mono text-[8px] text-zinc-300">{t("noScreenshot")}</p>
                   </div>
                 </div>
                 <div className="min-w-0">
                   {screenshotError ? (
                     <>
-                      <p className="text-sm font-semibold text-zinc-700">Screenshot unavailable</p>
+                      <p className="text-sm font-semibold text-zinc-700">{t("screenshotUnavailable")}</p>
                       <p className="mt-0.5 text-xs text-zinc-400">
                         {screenshotError.includes("timeout") || screenshotError.includes("Timeout")
                           ? "The browser timed out rendering this page. The audit data below is still accurate."
@@ -3677,10 +3706,9 @@ export default function AuditTool() {
                     </>
                   ) : (
                     <>
-                      <p className="text-sm font-semibold text-zinc-700">Audit based on live HTML signals</p>
+                      <p className="text-sm font-semibold text-zinc-700">{t("auditBasedOnLiveHtml")}</p>
                       <p className="mt-0.5 text-xs leading-relaxed text-zinc-400">
-                        Title, structure, links, images, and load data were fetched directly from the page.
-                        Visual screenshots load after the audit completes.
+                        {t("auditBasedOnLiveHtmlDesc")}
                       </p>
                     </>
                   )}
@@ -3710,7 +3738,7 @@ export default function AuditTool() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2.5">
               <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
-                Prioritised by:
+                {t("prioritisedBy")}
               </span>
               {topCats.map((cat, i) => (
                 <span key={cat} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-2.5 py-0.5 font-mono text-[10px] text-zinc-600">
@@ -3719,7 +3747,7 @@ export default function AuditTool() {
                 </span>
               ))}
               <span className="hidden sm:inline ml-auto font-mono text-[10px] text-zinc-400">
-                {viewMode === "table" ? "Fix prompt → on any row" : "Select a finding to inspect"}
+                {viewMode === "table" ? t("fixPromptOnRow") : t("selectFindingToInspect")}
               </span>
             </div>
 
@@ -3740,7 +3768,7 @@ export default function AuditTool() {
                   <line x1="0.5" y1="8" x2="11.5" y2="8" stroke="currentColor" strokeOpacity=".5"/>
                   <line x1="4" y1="0.5" x2="4" y2="11.5" stroke="currentColor" strokeOpacity=".5"/>
                 </svg>
-                Table
+                {t("tableView")}
               </button>
               <button
                 onClick={() => {
@@ -3763,7 +3791,7 @@ export default function AuditTool() {
                   <line x1="5" y1="0.5" x2="5" y2="11.5" stroke="currentColor" strokeOpacity=".5"/>
                   <line x1="5" y1="7" x2="11.5" y2="7" stroke="currentColor" strokeOpacity=".5"/>
                 </svg>
-                Inspector
+                {t("inspectorView")}
               </button>
             </div>
           </div>
@@ -3773,7 +3801,7 @@ export default function AuditTool() {
             <div className="overflow-hidden rounded-xl border border-zinc-200">
               {/* Desktop header */}
               <div className="hidden sm:grid sm:grid-cols-[90px_120px_1fr_1fr_1fr_70px_70px_160px] border-b border-zinc-200 bg-zinc-50 px-4 py-3 gap-3">
-                {["Priority","Category","Issue","Why it matters","Suggested fix","Effort","Impact",""].map((h) => (
+                {[t("priorityCol"),t("categoryCol"),t("issueCol"),t("whyItMattersCol"),t("suggestedFixCol"),t("effortCol"),t("impactCol"),""].map((h) => (
                   <div key={h} className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{h}</div>
                 ))}
               </div>
@@ -3817,21 +3845,21 @@ export default function AuditTool() {
                         </div>
                         <div className="flex items-center justify-between">
                           <div className="flex gap-3">
-                            <span className="font-mono text-[10px] text-zinc-400">Effort: {f.effort}</span>
-                            <span className="font-mono text-[10px] text-zinc-400">Impact: {f.impact}</span>
+                            <span className="font-mono text-[10px] text-zinc-400">{t("effortLabel")} {f.effort}</span>
+                            <span className="font-mono text-[10px] text-zinc-400">{t("impactLabel")} {f.impact}</span>
                           </div>
                           <div className="flex gap-2">
                             <button
                               onClick={() => openEvidenceDrawer(f)}
                               className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-[11px] text-zinc-600 hover:border-zinc-400 transition-colors"
                             >
-                              Evidence
+                              {t("evidenceBtn")}
                             </button>
                             <button
                               onClick={() => openDrawer(f)}
                               className="inline-flex items-center gap-1 rounded-lg bg-zinc-900 px-3 py-1.5 font-mono text-[11px] text-white hover:bg-zinc-700 transition-colors"
                             >
-                              Fix prompt →
+                              {t("fixPromptBtn")}
                             </button>
                           </div>
                         </div>
@@ -3870,13 +3898,13 @@ export default function AuditTool() {
                             onClick={() => openDrawer(f)}
                             className="inline-flex items-center justify-center gap-1 rounded-lg bg-zinc-900 px-3 py-2 font-mono text-[11px] text-white hover:bg-zinc-700 transition-colors whitespace-nowrap"
                           >
-                            Fix prompt →
+                            {t("fixPromptBtn")}
                           </button>
                           <button
                             onClick={() => openEvidenceDrawer(f)}
                             className="inline-flex items-center justify-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-[11px] text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-colors whitespace-nowrap"
                           >
-                            Show evidence
+                            {t("showEvidence")}
                           </button>
                         </div>
                       </div>
@@ -3910,14 +3938,14 @@ export default function AuditTool() {
               : ALL_TABS;
 
             return (
-              <div className="flex h-[720px] overflow-hidden rounded-xl border border-zinc-200 shadow-sm">
+              <div className={`flex h-[720px] overflow-hidden rounded-xl border border-zinc-200 shadow-sm${isRTL ? " flex-row-reverse" : ""}`}>
 
                 {/* ── LEFT PANEL — scrollable finding list ──────────────────── */}
                 <div className="flex w-[272px] shrink-0 flex-col overflow-hidden border-r border-zinc-200 bg-zinc-50">
                   {/* Panel header */}
                   <div className="shrink-0 border-b border-zinc-200 bg-white px-3 py-2.5">
                     <p className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
-                      {sortedFindings.length} findings
+                      {sortedFindings.length} {t("findingsLabel")}
                     </p>
                   </div>
                   {/* Finding cards */}
@@ -4008,7 +4036,7 @@ export default function AuditTool() {
                           {/* Hover hint */}
                           <div className="absolute inset-0 flex items-end justify-end bg-black/0 p-2 transition-colors group-hover:bg-black/20">
                             <span className="rounded-full border border-white/20 bg-black/60 px-2 py-1 font-mono text-[9px] font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100">
-                              Enlarge ↗
+                              {t("enlargeBtn")}
                             </span>
                           </div>
                         </div>
@@ -4016,7 +4044,7 @@ export default function AuditTool() {
                         <div className="flex h-full items-center justify-center bg-zinc-900">
                           <div className="text-center">
                             <div className="mx-auto mb-3 h-6 w-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
-                            <p className="font-mono text-[10px] text-zinc-500">Capturing screenshot…</p>
+                            <p className="font-mono text-[10px] text-zinc-500">{t("capturingScreenshot")}</p>
                           </div>
                         </div>
                       ) : (
@@ -4026,8 +4054,8 @@ export default function AuditTool() {
                             <circle cx="8.5" cy="8.5" r="1.5" />
                             <polyline points="21 15 16 10 5 21" />
                           </svg>
-                          <p className="font-mono text-[10px] text-zinc-600">No screenshot available</p>
-                          <p className="font-mono text-[9px] text-zinc-700">Annotations based on DOM signals</p>
+                          <p className="font-mono text-[10px] text-zinc-600">{t("noScreenshotAvailable")}</p>
+                          <p className="font-mono text-[9px] text-zinc-700">{t("annotationsBasedOnDom")}</p>
                         </div>
                       )}
                     </div>
@@ -4061,7 +4089,7 @@ export default function AuditTool() {
                       {/* Why this matters */}
                       <div className="px-6 py-4">
                         <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                          Why this matters
+                          {t("whyThisMatters").toUpperCase()}
                         </p>
                         <p className="text-[13px] leading-relaxed text-zinc-700">
                           {inspectorFinding.whyItMatters}
@@ -4071,18 +4099,18 @@ export default function AuditTool() {
                       {/* How to fix */}
                       <div className="px-6 py-4">
                         <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                          How to fix
+                          {t("howToFix").toUpperCase()}
                         </p>
                         <p className="mb-3 text-[13px] leading-relaxed text-zinc-700">
                           {inspectorFinding.suggestedFix}
                         </p>
                         <div className="flex gap-4">
                           <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-zinc-500">
-                            <span className="font-semibold text-zinc-700">Effort:</span>
+                            <span className="font-semibold text-zinc-700">{t("effortLabel")}</span>
                             {inspectorFinding.effort}
                           </span>
                           <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-zinc-500">
-                            <span className="font-semibold text-zinc-700">Impact:</span>
+                            <span className="font-semibold text-zinc-700">{t("impactLabel")}</span>
                             {inspectorFinding.impact}
                           </span>
                         </div>
@@ -4093,7 +4121,7 @@ export default function AuditTool() {
                         {/* Section label */}
                         <div className="border-b border-zinc-800 px-6 py-2.5">
                           <p className="font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                            Fix prompts
+                            {t("fixPromptsSection").toUpperCase()}
                           </p>
                         </div>
                         {/* Tabs */}
@@ -4195,7 +4223,7 @@ export default function AuditTool() {
                   <div className="min-w-0 mr-4">
                     <div className="mb-2 flex flex-wrap items-center gap-2">
                       <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
-                        Fix prompt
+                        {t("fixPromptHeader").toUpperCase()}
                       </span>
                       <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] font-semibold ${P_CONFIG[selectedFinding.priority].badge}`}>
                         <span className={`h-1 w-1 rounded-full ${P_CONFIG[selectedFinding.priority].dot}`} />
@@ -4241,7 +4269,7 @@ export default function AuditTool() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm leading-none">🔍</span>
                       <p className="text-[11px] text-zinc-500">
-                        No specific builder detected. Choose the prompt that matches your workflow.
+                        {t("noBuilderDetected")}
                       </p>
                     </div>
                   </div>
@@ -4570,18 +4598,18 @@ export default function AuditTool() {
                     {(evidenceFinding.found || evidenceFinding.expected) && (
                       <div>
                         <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                          Why this finding exists
+                          {t("whyThisFindingExists").toUpperCase()}
                         </p>
                         <div className="space-y-2">
                           {evidenceFinding.found && (
                             <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3.5">
-                              <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-red-500">Found</p>
+                              <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-red-500">{t("foundLabel").toUpperCase()}</p>
                               <p className="text-sm leading-relaxed text-zinc-800">{evidenceFinding.found}</p>
                             </div>
                           )}
                           {evidenceFinding.expected && (
                             <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3.5">
-                              <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-emerald-600">Expected</p>
+                              <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-emerald-600">{t("expectedLabel").toUpperCase()}</p>
                               <p className="text-sm leading-relaxed text-zinc-700">{evidenceFinding.expected}</p>
                             </div>
                           )}
@@ -4596,7 +4624,7 @@ export default function AuditTool() {
                     {/* ── Visual focus screenshot preview ─────────────────────── */}
                     <div>
                       <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                        Visual focus
+                        {t("visualFocus").toUpperCase()}
                       </p>
                       {/* Screenshot container — 360px shows a clear, readable portion of the page */}
                       <div
@@ -4628,7 +4656,7 @@ export default function AuditTool() {
                           <div className="flex h-full items-center justify-center">
                             <div className="text-center">
                               <div className="mx-auto mb-1.5 h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600" />
-                              <p className="font-mono text-[9px] text-zinc-400">Capturing screenshot…</p>
+                              <p className="font-mono text-[9px] text-zinc-400">{t("capturingScreenshot")}</p>
                             </div>
                           </div>
                         ) : screenshotError ? (
@@ -4637,8 +4665,8 @@ export default function AuditTool() {
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-400">
                               <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
                             </svg>
-                            <p className="font-mono text-[9px] text-zinc-500">Screenshot unavailable</p>
-                            <p className="font-mono text-[8px] text-zinc-400">Jump to snapshot to see the page</p>
+                            <p className="font-mono text-[9px] text-zinc-500">{t("screenshotUnavailable")}</p>
+                            <p className="font-mono text-[8px] text-zinc-400">{t("jumpToSnapshot")}</p>
                           </div>
                         ) : (
                           /* ── Pre-capture wireframe — screenshot not yet requested ── */
@@ -4664,7 +4692,7 @@ export default function AuditTool() {
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
                           </svg>
-                          Jump to snapshot
+                          {t("jumpToSnapshot")}
                         </button>
                         {/* Open zoomed modal */}
                         {screenshotBase64 && (
@@ -4675,7 +4703,7 @@ export default function AuditTool() {
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                               <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
                             </svg>
-                            Full screenshot
+                            {t("fullScreenshot")}
                           </button>
                         )}
                       </div>
@@ -4706,7 +4734,7 @@ export default function AuditTool() {
                       return (
                         <div>
                           <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                            Confidence
+                            {t("confidenceSection").toUpperCase()}
                           </p>
                           <div className={`rounded-xl border ${levelColors.border} ${levelColors.bg} p-4`}>
                             {/* Score + level + bar */}
@@ -4750,7 +4778,7 @@ export default function AuditTool() {
                     {/* What the audit found */}
                     <div>
                       <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                        What the audit found
+                        {t("whatTheAuditFound").toUpperCase()}
                       </p>
                       <p className="text-sm leading-relaxed text-zinc-700">
                         {ev.summary}
@@ -4760,7 +4788,7 @@ export default function AuditTool() {
                     {/* Signal table */}
                     <div>
                       <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                        Signals used to detect this
+                        {t("signalsUsed").toUpperCase()}
                       </p>
                       <div className="overflow-hidden rounded-xl border border-zinc-200">
                         {ev.signals.map((sig, i) => (
@@ -4791,7 +4819,7 @@ export default function AuditTool() {
                     {/* Why this finding was created */}
                     <div>
                       <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                        Why this finding was created
+                        {t("whyThisFindingWasCreated").toUpperCase()}
                       </p>
                       <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
                         <p className="text-xs leading-relaxed text-zinc-600">{ev.triggerReason}</p>
@@ -4801,7 +4829,7 @@ export default function AuditTool() {
                     {/* Visual evidence section — annotated screenshot */}
                     <div>
                       <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                        Visual evidence
+                        {t("visualEvidence").toUpperCase()}
                       </p>
                       <AnnotatedScreenshot
                         screenshotBase64={screenshotBase64}
@@ -4819,8 +4847,8 @@ export default function AuditTool() {
                     <div className="border-t border-zinc-100 pt-1">
                       <div className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white px-4 py-3">
                         <div>
-                          <p className="text-xs font-semibold text-zinc-700">Ready to fix this?</p>
-                          <p className="text-[11px] text-zinc-400">Open the fix prompt drawer for this finding</p>
+                          <p className="text-xs font-semibold text-zinc-700">{t("readyToFix")}</p>
+                          <p className="text-[11px] text-zinc-400">{t("openFixPromptDrawer")}</p>
                         </div>
                         <button
                           onClick={() => {
@@ -4829,7 +4857,7 @@ export default function AuditTool() {
                           }}
                           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900 px-4 py-2 font-mono text-[11px] font-semibold text-white hover:bg-zinc-700 transition-colors"
                         >
-                          Fix prompt →
+                          {t("fixPromptBtn")}
                         </button>
                       </div>
                     </div>

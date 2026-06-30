@@ -75,4 +75,11 @@ export const he: Record<string, string> = {
   effortLabel: "מאמץ:",
   impactLabel: "השפעה:",
   noScreenshot: "אין צילום מסך",
+  impactCardLabel: "השפעה",
+  confidenceHigh: "גבוה",
+  confidenceMed: "בינוני",
+  confidenceLow: "נמוך",
+  confidenceHighLabel: "ביטחון גבוה",
+  confidenceMedLabel: "ביטחון בינוני",
+  confidenceLowLabel: "ביטחון נמוך",
 };

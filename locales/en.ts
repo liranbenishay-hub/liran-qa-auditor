@@ -76,4 +76,11 @@ export const en: Record<string, string> = {
   effortLabel: "Effort:",
   impactLabel: "Impact:",
   noScreenshot: "No screenshot",
+  impactCardLabel: "Impact",
+  confidenceHigh: "High",
+  confidenceMed: "Med",
+  confidenceLow: "Low",
+  confidenceHighLabel: "High confidence",
+  confidenceMedLabel: "Medium confidence",
+  confidenceLowLabel: "Low confidence",
 };

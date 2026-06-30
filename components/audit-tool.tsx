@@ -3,6 +3,17 @@
 import { useState, useRef, useEffect } from "react";
 import { type LangCode, TRANSLATIONS } from "../locales";
 import {
+  localizeFindingFields,
+  localizeEvidence,
+  localizeCategory,
+  localizePriority,
+  localizeEffort,
+  localizeImpact,
+  localizeConfidenceReason,
+  localizeConfidenceLevel,
+  localizeConfidenceSignalLabel,
+} from "../locales/findings";
+import {
   classifySiteContext,
   SITE_TYPE_LABELS,
   SITE_TYPE_ICONS,
@@ -52,6 +63,10 @@ type ToolId = "lovable" | "base44" | "claude" | "cursor" | "generic";
 
 interface AuditFinding {
   id: string;
+  /** Stable key for built-in finding content localization */
+  ruleKey?: string;
+  /** Dynamic values for localized templates — detected website text stays in original language */
+  params?: Record<string, string | number>;
   priority: Priority;
   category: Category;
   issue: string;
@@ -1579,56 +1594,56 @@ function getAIBuilderFindings(url: string, builder: string | null): AuditFinding
 
   const base: AuditFinding[] = [
     {
-      id: fid(), priority: "urgent", category: "User Journey",
+      id: fid(), ruleKey: "ai-empty-states", priority: "urgent", category: "User Journey",
       issue: "Empty states likely not handled — pages may break when data is missing",
       whyItMatters: "AI builders scaffold happy-path flows. Empty states (no data, first-time user, loading error) are rarely generated automatically and will show broken UI in production.",
       suggestedFix: "Add explicit empty state components for every list, table, or data display. Include: a message, an icon, and a suggested next action.",
       effort: "Medium", impact: "High",
     },
     {
-      id: fid(), priority: "urgent", category: "Product Clarity",
+      id: fid(), ruleKey: "ai-value-prop-5sec", params: { builder: b }, priority: "urgent", category: "Product Clarity",
       issue: "Value proposition may not be clear within 5 seconds",
       whyItMatters: `Products built quickly with ${b} often have placeholder or generic headlines. A new visitor must understand what the product does and who it is for within 5 seconds.`,
       suggestedFix: "Rewrite the hero headline to name: what the product does, who it is for, and the specific outcome they get. Remove generic phrases like 'powerful', 'seamless', or 'next-generation'.",
       effort: "Low", impact: "High",
     },
     {
-      id: fid(), priority: "urgent", category: "Performance Perception",
+      id: fid(), ruleKey: "ai-form-validation", priority: "urgent", category: "Performance Perception",
       issue: "Users may submit forms with invalid data — causing silent failures or broken flows",
       whyItMatters: "Default AI-builder form validation is often minimal: missing required field enforcement, no format checking (email, phone), no error messages on submission failure.",
       suggestedFix: "Test every form: empty submission, invalid email format, special characters, very long inputs. Add visible inline error messages for each validation failure.",
       effort: "Medium", impact: "High",
     },
     {
-      id: fid(), priority: "important", category: "User Journey",
+      id: fid(), ruleKey: "ai-signin-generic", params: { builder: b }, priority: "important", category: "User Journey",
       issue: "The sign-in experience is using generic defaults that don't match the product voice",
       whyItMatters: `${b} generates auth flows with default copy and UX patterns. These are often generic and lack branding, onboarding context, or clear next steps after sign-up.`,
       suggestedFix: "Customise the sign-up and login flow: update copy to match product voice, add context about what happens next, and ensure the post-auth redirect lands in a useful state.",
       effort: "Medium", impact: "High",
     },
     {
-      id: fid(), priority: "important", category: "Mobile Experience",
+      id: fid(), ruleKey: "ai-mobile-nav", priority: "important", category: "Mobile Experience",
       issue: "Navigation and layout may not adapt correctly to narrow viewports",
       whyItMatters: "AI builders often generate desktop-first layouts. Mobile navigation, card grids, and data tables frequently overflow or stack incorrectly at 375px.",
       suggestedFix: "Test the full product on iPhone SE (375px). Fix: nav overflow, horizontal scrolling, button tap targets below 44px, and text below 13px.",
       effort: "Medium", impact: "High",
     },
     {
-      id: fid(), priority: "important", category: "Product Clarity",
+      id: fid(), ruleKey: "ai-placeholder-copy", priority: "important", category: "Product Clarity",
       issue: "Content likely contains placeholder copy or generic AI-generated text",
       whyItMatters: "AI builders pre-populate placeholder content that is often not updated before launch. Generic copy reduces credibility and fails to communicate real product value.",
       suggestedFix: "Audit every text element: headlines, CTAs, descriptions, error messages, onboarding copy. Replace all placeholder or generic text with product-specific, outcome-focused language.",
       effort: "Low", impact: "Medium",
     },
     {
-      id: fid(), priority: "important", category: "Performance Perception",
+      id: fid(), ruleKey: "ai-loading-states", priority: "important", category: "Performance Perception",
       issue: "Users see a blank or frozen screen while data loads — creating a broken product impression",
       whyItMatters: "When data is fetching or an action is processing, the UI should show a loading state. Without it, users click twice, assume the product is broken, or lose progress.",
       suggestedFix: "Add loading indicators for: page loads, form submissions, data fetches, and any operation taking more than 300ms. Use skeleton screens for content-heavy areas.",
       effort: "Medium", impact: "Medium",
     },
     {
-      id: fid(), priority: "later", category: "Trust Signals",
+      id: fid(), ruleKey: "ai-no-social-proof", priority: "later", category: "Trust Signals",
       issue: "No social proof or credibility signals visible on the main page",
       whyItMatters: "AI-built products launched quickly often have no testimonials, usage numbers, or proof of real users. Without these, new visitors have no reason to trust the product.",
       suggestedFix: "Add at least one trust signal: a user count, a testimonial, a recognised logo, or a press mention. Even 'X users signed up this week' adds credibility.",
@@ -1639,7 +1654,7 @@ function getAIBuilderFindings(url: string, builder: string | null): AuditFinding
   // URL-specific additions
   if (u.includes("dashboard") || u.includes("app.")) {
     base.push({
-      id: fid(), priority: "urgent", category: "Performance Perception",
+      id: fid(), ruleKey: "ai-access-controls", priority: "urgent", category: "Performance Perception",
       issue: "Access controls are untested — users may see data they shouldn't, or be blocked from what they need",
       whyItMatters: "AI-built dashboards often lack proper permission gates. Users may access data or actions they should not be able to see, or be blocked from actions they should have.",
       suggestedFix: "Test the app as different user types: new user, existing user, admin, free tier, paid tier. Verify that each role sees only what they are supposed to see.",
@@ -1649,7 +1664,7 @@ function getAIBuilderFindings(url: string, builder: string | null): AuditFinding
 
   if (u.includes("pricing") || u.includes("checkout")) {
     base.push({
-      id: fid(), priority: "urgent", category: "Conversion",
+      id: fid(), ruleKey: "ai-payment-flow", priority: "urgent", category: "Conversion",
       issue: "The payment flow has not been validated — one edge case here is a direct revenue loss",
       whyItMatters: "Payment flows in AI-built products are the highest-risk area. Edge cases: failed payment handling, double-charge prevention, webhook confirmation, and email receipts must all be tested.",
       suggestedFix: "Test the full payment flow end-to-end with a test card: success, decline, card error, 3DS challenge, refund. Verify confirmation email is sent and the user state updates correctly.",
@@ -1659,7 +1674,7 @@ function getAIBuilderFindings(url: string, builder: string | null): AuditFinding
 
   if (u.includes("signup") || u.includes("register") || u.includes("onboard")) {
     base.push({
-      id: fid(), priority: "important", category: "Conversion",
+      id: fid(), ruleKey: "ai-activation-friction", priority: "important", category: "Conversion",
       issue: "The activation flow likely asks for more than users are willing to give before seeing value",
       whyItMatters: "AI-generated sign-up flows often ask for too much information too early. Every extra field before the user sees product value reduces completion by ~10%.",
       suggestedFix: "Reduce sign-up to the minimum required: email + password, or OAuth only. Move company name, role, team size to the onboarding flow after the user sees value.",
@@ -1673,35 +1688,35 @@ function getAIBuilderFindings(url: string, builder: string | null): AuditFinding
 function getSaaSFindings(): AuditFinding[] {
   return [
     {
-      id: fid(), priority: "urgent", category: "Product Clarity",
+      id: fid(), ruleKey: "saas-headline-outcome", priority: "urgent", category: "Product Clarity",
       issue: "The headline describes what the product is, not what changes for the user who buys it",
       whyItMatters: "A new visitor decides within 5 seconds whether to engage. Feature-led headlines ('Powerful AI platform') do not communicate value. Outcome-led headlines do ('Cut your support tickets in half').",
       suggestedFix: "Rewrite the headline to complete: 'After using this, you can finally...' or 'This replaces the pain of...'. Name a specific, measurable outcome.",
       effort: "Low", impact: "High",
     },
     {
-      id: fid(), priority: "urgent", category: "Conversion",
+      id: fid(), ruleKey: "saas-gated-experience", priority: "urgent", category: "Conversion",
       issue: "Users are asked to commit before experiencing the product — most leave without converting",
       whyItMatters: "Gated product experiences cause 40–70% drop-off before a user sees value. Best-in-class SaaS shows the product before asking for email.",
       suggestedFix: "Add an interactive demo, sandbox, or product tour that requires no sign-up. Let users experience the core value before committing to account creation.",
       effort: "High", impact: "High",
     },
     {
-      id: fid(), priority: "important", category: "Trust Signals",
+      id: fid(), ruleKey: "saas-no-customer-proof", priority: "important", category: "Trust Signals",
       issue: "There is no evidence of existing customers visible without scrolling — a trust gap at the top of the funnel",
       whyItMatters: "B2B buyers look for proof of existing customers before engaging. Customer logos or testimonials below the fold may never be seen.",
       suggestedFix: "Move at least 3 customer logos or one specific testimonial to the hero section, below the headline and above the first scroll break.",
       effort: "Low", impact: "Medium",
     },
     {
-      id: fid(), priority: "important", category: "Mobile Experience",
+      id: fid(), ruleKey: "saas-mobile-cta", priority: "important", category: "Mobile Experience",
       issue: "The primary action may be invisible or unreachable on mobile — half the audience cannot convert",
       whyItMatters: "If the primary CTA is only visible on desktop or buried in mobile navigation, mobile traffic — often 50%+ of visitors — cannot convert.",
       suggestedFix: "Verify the primary CTA is visible and tappable above the fold on 375px viewport. Ensure tap target is at least 44×44px.",
       effort: "Low", impact: "High",
     },
     {
-      id: fid(), priority: "later", category: "UX Friction",
+      id: fid(), ruleKey: "saas-form-fields", priority: "later", category: "UX Friction",
       issue: "The activation form is collecting more than is needed — every extra field reduces completion",
       whyItMatters: "Each extra field in a sign-up form reduces completion rate by approximately 10%. Most information (company size, role, use case) can be collected post-activation.",
       suggestedFix: "Reduce sign-up to email + password minimum. Move company info and role to post-signup onboarding where intent is already established.",
@@ -1713,35 +1728,35 @@ function getSaaSFindings(): AuditFinding[] {
 function getPortfolioFindings(): AuditFinding[] {
   return [
     {
-      id: fid(), priority: "urgent", category: "Product Clarity",
+      id: fid(), ruleKey: "portfolio-role-unclear", priority: "urgent", category: "Product Clarity",
       issue: "Role and specialty not immediately clear",
       whyItMatters: "A hiring manager or client makes their judgment in 3–5 seconds. If your role and specialty are not clear in the hero, they will not read further.",
       suggestedFix: "First sentence of the hero must include: your role, your specialty, and who you help. e.g. 'Product Manager specialising in B2B fintech platforms.'",
       effort: "Low", impact: "High",
     },
     {
-      id: fid(), priority: "urgent", category: "Conversion",
+      id: fid(), ruleKey: "portfolio-contact-steps", priority: "urgent", category: "Conversion",
       issue: "Contact path requires too many steps",
       whyItMatters: "A hiring manager who cannot find contact information in one click will not search for it. The path from portfolio to contact should be one action.",
       suggestedFix: "Add a prominent contact CTA in the navigation and at the bottom of every page. Link directly to email, LinkedIn, or a contact form — not a separate contact page.",
       effort: "Low", impact: "High",
     },
     {
-      id: fid(), priority: "important", category: "Trust Signals",
+      id: fid(), ruleKey: "portfolio-case-study-outcomes", priority: "important", category: "Trust Signals",
       issue: "Case studies lack specific, measurable outcomes",
       whyItMatters: "Portfolios that describe what was built without naming what changed in measurable terms are unconvincing. Outcomes are more credible than descriptions.",
       suggestedFix: "For each case study, add: the specific metric that moved, by how much, and over what timeframe. e.g. 'Reduced settlement support tickets by 40% in 90 days.'",
       effort: "Medium", impact: "High",
     },
     {
-      id: fid(), priority: "important", category: "Mobile Experience",
+      id: fid(), ruleKey: "portfolio-mobile-layout", priority: "important", category: "Mobile Experience",
       issue: "Portfolio layout may not adapt to mobile viewports",
       whyItMatters: "Hiring managers often review portfolios on phones. A broken mobile layout signals poor attention to detail — exactly the opposite of what a PM or designer wants to communicate.",
       suggestedFix: "Test on iPhone SE (375px). Ensure all case studies, images, and contact paths are readable and accessible. Fix any horizontal overflow.",
       effort: "Medium", impact: "Medium",
     },
     {
-      id: fid(), priority: "later", category: "Product Clarity",
+      id: fid(), ruleKey: "portfolio-generic-titles", priority: "later", category: "Product Clarity",
       issue: "Section titles are generic — they describe structure, not the work or the person",
       whyItMatters: "Generic headers ('About Me', 'My Work') are forgettable. Specific, voice-driven headers make a portfolio memorable.",
       suggestedFix: "Replace generic section titles with specific statements that reflect your PM style. e.g. 'Products I shipped' → 'What I built and what changed because of it.'",
@@ -1753,35 +1768,35 @@ function getPortfolioFindings(): AuditFinding[] {
 function getEcommerceFindings(): AuditFinding[] {
   return [
     {
-      id: fid(), priority: "urgent", category: "Trust Signals",
+      id: fid(), ruleKey: "ecom-payment-security", priority: "urgent", category: "Trust Signals",
       issue: "Payment security signals may not be visible at checkout",
       whyItMatters: "65% of shoppers abandon checkout due to trust concerns. Security badges and accepted payment logos must appear near the checkout CTA.",
       suggestedFix: "Add SSL badge, accepted payment icons, and a returns policy summary above the Place Order button.",
       effort: "Low", impact: "High",
     },
     {
-      id: fid(), priority: "urgent", category: "Conversion",
+      id: fid(), ruleKey: "ecom-guest-checkout", priority: "urgent", category: "Conversion",
       issue: "Guest checkout likely not prominently offered",
       whyItMatters: "Forced account creation before purchase causes 35% checkout abandonment. Guest checkout should be the default or equally prominent option.",
       suggestedFix: "Place guest checkout as the first option. Move account creation to post-purchase as an optional step.",
       effort: "Low", impact: "High",
     },
     {
-      id: fid(), priority: "important", category: "Mobile Experience",
+      id: fid(), ruleKey: "ecom-gallery-touch", priority: "important", category: "Mobile Experience",
       issue: "Product image gallery touch interactions may not work correctly",
       whyItMatters: "Mobile shoppers rely on swiping through product images. Pinch-to-zoom and swipe gestures must work on iOS Safari and Android Chrome.",
       suggestedFix: "Test product gallery with touch gestures. Ensure pinch-to-zoom is not disabled via CSS. Test horizontal swipe navigation.",
       effort: "Medium", impact: "High",
     },
     {
-      id: fid(), priority: "important", category: "Performance Perception",
+      id: fid(), ruleKey: "ecom-cart-persist", priority: "important", category: "Performance Perception",
       issue: "Cart state may not persist across page refreshes or navigation",
       whyItMatters: "If cart items disappear when a user navigates away or refreshes, it is one of the most frustrating experiences in e-commerce and directly causes drop-off.",
       suggestedFix: "Test: add items to cart → navigate to another page → return to cart. Items must persist. Also test: close browser tab and reopen.",
       effort: "Low", impact: "High",
     },
     {
-      id: fid(), priority: "later", category: "UX Friction",
+      id: fid(), ruleKey: "ecom-checkout-order", priority: "later", category: "UX Friction",
       issue: "Checkout form collects information in non-optimal order",
       whyItMatters: "The standard checkout order (email → shipping → payment) is optimised for conversion. Non-standard flows create confusion and increase drop-off.",
       suggestedFix: "Follow the standard checkout order: email/contact → shipping address → delivery method → payment. Do not ask for account creation before payment details.",
@@ -1793,28 +1808,28 @@ function getEcommerceFindings(): AuditFinding[] {
 function getDevToolFindings(): AuditFinding[] {
   return [
     {
-      id: fid(), priority: "urgent", category: "Product Clarity",
+      id: fid(), ruleKey: "devtool-quickstart-slow", priority: "urgent", category: "Product Clarity",
       issue: "Developers cannot see a working result quickly — the most common reason developers abandon evaluation",
       whyItMatters: "Developer tools are evaluated by how quickly a developer can see a working result. If the quickstart takes more than 10 minutes, developers move on to alternatives.",
       suggestedFix: "Create a quickstart that reaches a working result in 3 steps or fewer. Measure and optimise time-to-first-success as a product metric.",
       effort: "High", impact: "High",
     },
     {
-      id: fid(), priority: "important", category: "Trust Signals",
+      id: fid(), ruleKey: "devtool-no-status-page", priority: "important", category: "Trust Signals",
       issue: "Status page not linked from main navigation",
       whyItMatters: "Developer tool buyers check uptime history before committing. A missing status page is a trust gap for engineering teams evaluating reliability.",
       suggestedFix: "Add a status page link to the main navigation footer and the dashboard. Link to historical uptime data.",
       effort: "Low", impact: "Medium",
     },
     {
-      id: fid(), priority: "important", category: "Performance Perception",
+      id: fid(), ruleKey: "devtool-broken-examples", priority: "important", category: "Performance Perception",
       issue: "Copy-paste code that breaks on first use destroys developer trust immediately and permanently",
       whyItMatters: "Copy-paste code that does not work destroys developer trust faster than anything else. One broken example can cause a developer to abandon evaluation entirely.",
       suggestedFix: "Run CI against all code examples in documentation on every release. Test in all officially supported language versions and environments.",
       effort: "High", impact: "High",
     },
     {
-      id: fid(), priority: "later", category: "UX Friction",
+      id: fid(), ruleKey: "devtool-docs-search", priority: "later", category: "UX Friction",
       issue: "Documentation search fails for the exact queries developers need most — error codes, method names, SDK specifics",
       whyItMatters: "Developers search docs with specific technical queries: error codes, method names, SDK names. Generic search fails these.",
       suggestedFix: "Implement Algolia DocSearch or equivalent. Explicitly index error codes, method names, and common technical queries.",
@@ -1826,28 +1841,28 @@ function getDevToolFindings(): AuditFinding[] {
 function getLandingFindings(): AuditFinding[] {
   return [
     {
-      id: fid(), priority: "urgent", category: "Product Clarity",
+      id: fid(), ruleKey: "landing-promise-unclear", priority: "urgent", category: "Product Clarity",
       issue: "The product's core promise requires too much effort to understand — most visitors leave before getting there",
       whyItMatters: "Landing pages have one job: convert a visitor into a lead. If the value proposition requires reading, most visitors will not see it.",
       suggestedFix: "Reduce the hero to: one outcome-focused headline, two supporting sentences maximum, one CTA. Remove everything else above the fold.",
       effort: "Low", impact: "High",
     },
     {
-      id: fid(), priority: "urgent", category: "Conversion",
+      id: fid(), ruleKey: "landing-competing-ctas", priority: "urgent", category: "Conversion",
       issue: "Multiple competing actions are splitting user attention — the primary conversion path is diluted",
       whyItMatters: "Every additional CTA reduces the conversion rate of the primary one. A landing page with one CTA converts 3× better than one with multiple.",
       suggestedFix: "Remove or visually eliminate all CTAs except the primary action. If navigation is present, consider removing it from the landing page entirely.",
       effort: "Low", impact: "High",
     },
     {
-      id: fid(), priority: "important", category: "Trust Signals",
+      id: fid(), ruleKey: "landing-no-social-proof", priority: "important", category: "Trust Signals",
       issue: "No early social proof or credibility signals",
       whyItMatters: "Pre-launch and early-stage landing pages need trust signals even without a customer base. Waitlist count, press mention, or founder credibility fill this gap.",
       suggestedFix: "Add at least one trust signal: a waitlist counter, a press mention, a recognisable logo, or a founder credential with relevant context.",
       effort: "Low", impact: "Medium",
     },
     {
-      id: fid(), priority: "later", category: "Performance Perception",
+      id: fid(), ruleKey: "landing-form-untested", priority: "later", category: "Performance Perception",
       issue: "Leads are likely being lost silently — form submission paths are rarely tested beyond the button click",
       whyItMatters: "A broken sign-up form on a landing page loses leads silently. Most teams test form design but not the full submission → confirmation email → unsubscribe flow.",
       suggestedFix: "Test: submit → confirmation page renders → confirmation email delivered → unsubscribe path works. Test on mobile.",
@@ -1862,7 +1877,7 @@ function getURLSignalFindings(url: string): AuditFinding[] {
 
   if (u.includes("pricing")) {
     extra.push({
-      id: fid(), priority: "urgent", category: "Conversion",
+      id: fid(), ruleKey: "url-pricing-gated", priority: "urgent", category: "Conversion",
       issue: "This pricing page may require a sales call to proceed — gating out buyers who prefer to self-evaluate",
       whyItMatters: "Pricing pages that require a sales call gate out up to 60% of developer and SMB buyers who self-qualify. This is the single highest-impact conversion issue on pricing pages.",
       suggestedFix: "Add a free tier, sandbox, or interactive demo. Remove 'Contact sales' as the only CTA on the pricing page. Show at least one tier with transparent, immediate access.",
@@ -1872,7 +1887,7 @@ function getURLSignalFindings(url: string): AuditFinding[] {
 
   if (u.includes("login") || u.includes("signin")) {
     extra.push({
-      id: fid(), priority: "important", category: "Performance Perception",
+      id: fid(), ruleKey: "url-login-reset", priority: "important", category: "Performance Perception",
       issue: "Login page — password reset and error recovery flows need testing",
       whyItMatters: "Login errors are often the first experience a returning user has after a break. Broken password reset or unhelpful error messages cause churn before the user even re-engages.",
       suggestedFix: "Test: wrong password error message, too-many-attempts handling, password reset email delivery, and reset link expiry behaviour.",
@@ -1882,7 +1897,7 @@ function getURLSignalFindings(url: string): AuditFinding[] {
 
   if (u.includes("dashboard") || u.includes("/app")) {
     extra.push({
-      id: fid(), priority: "urgent", category: "Performance Perception",
+      id: fid(), ruleKey: "url-empty-dashboard", priority: "urgent", category: "Performance Perception",
       issue: "New users land in an empty dashboard with no guidance — the first impression is a blank screen",
       whyItMatters: "New users and users with no data will see the dashboard before any content exists. Without explicit empty states, the page looks broken.",
       suggestedFix: "Add empty state components for every list, chart, and data display. Include: an illustration or icon, a message explaining the empty state, and a CTA for the next action.",
@@ -1892,7 +1907,7 @@ function getURLSignalFindings(url: string): AuditFinding[] {
 
   if (u.includes("checkout") || u.includes("cart")) {
     extra.push({
-      id: fid(), priority: "urgent", category: "Performance Perception",
+      id: fid(), ruleKey: "url-payment-recovery", priority: "urgent", category: "Performance Perception",
       issue: "A failed payment with no recovery path is a direct revenue loss — one of the highest-cost bugs in any product",
       whyItMatters: "A failed payment with no clear recovery path is the highest-cost bug in a transactional product. Users who cannot retry immediately are lost.",
       suggestedFix: "Test: declined card, network error during payment, session timeout during checkout. Verify each case shows a clear error message and a working retry path.",
@@ -1902,7 +1917,7 @@ function getURLSignalFindings(url: string): AuditFinding[] {
 
   if (u.includes("docs") || u.includes("/api")) {
     extra.push({
-      id: fid(), priority: "important", category: "Product Clarity",
+      id: fid(), ruleKey: "url-docs-buried", priority: "important", category: "Product Clarity",
       issue: "The fastest path to a working result is buried — developers leave before finding it",
       whyItMatters: "The first question a developer asks is 'how quickly can I see this working?' If the quickstart is not the first thing on the docs homepage, evaluation time increases significantly.",
       suggestedFix: "Place a 'Get started' or quickstart link at the very top of the docs homepage, before any reference documentation or conceptual guides.",
@@ -2027,7 +2042,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (!data.title && !skipMarketingChecks) {
     findings.push({
-      id: fid(), priority: "urgent", category: "Product Clarity",
+      id: fid(), ruleKey: "api-no-title", priority: "urgent", category: "Product Clarity",
       issue: "This product has no name on the page",
       whyItMatters: "A missing title tag means the product has no identity in search results, browser tabs, or shared links. The first thing a user sees about your product is blank.",
       suggestedFix: "Add a <title> tag with the product name and a short value statement. e.g. 'ProductName — [what it does in 5 words]'. Keep it under 60 characters.",
@@ -2037,7 +2052,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
     });
   } else if (data.title.length < 20 && !isOfficialSite && !skipMarketingChecks) {
     findings.push({
-      id: fid(), priority: isAIBuilt ? "urgent" : "important", category: "Product Clarity",
+      id: fid(), ruleKey: "api-title-vague", params: { title: data.title, titleLen: data.title.length }, priority: isAIBuilt ? "urgent" : "important", category: "Product Clarity",
       issue: `The product name is too vague to communicate value: "${data.title}"`,
       whyItMatters: "A title under 20 characters cannot communicate what the product does or who it is for. Users scanning search results will not know why to click.",
       suggestedFix: `Expand the title: "${data.title} — [what it does] for [who]". Make the value visible before the user even clicks.`,
@@ -2047,7 +2062,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
     });
   } else if (data.title.length > 70) {
     findings.push({
-      id: fid(), priority: "later", category: "Product Clarity",
+      id: fid(), ruleKey: "api-title-truncated", params: { title: data.title.slice(0, 55), titleLen: data.title.length }, priority: "later", category: "Product Clarity",
       issue: "The product headline gets cut off in search results",
       whyItMatters: "Titles longer than 60 characters are truncated in Google, Slack, and most social previews. The part that matters most may never be read.",
       suggestedFix: "Trim to under 60 characters. Put the product name and primary value first. Cut anything that appears after the first value statement.",
@@ -2059,7 +2074,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (!data.description) {
     findings.push({
-      id: fid(), priority: "urgent", category: "Product Clarity",
+      id: fid(), ruleKey: "api-no-description", priority: "urgent", category: "Product Clarity",
       issue: "No product description visible to users before they arrive",
       whyItMatters: "Without a meta description, search engines and social platforms auto-generate preview text — usually a random sentence from the page. The first controlled impression of your product is lost.",
       suggestedFix: "Write a 120–155 character meta description that leads with the user outcome: 'Stop doing [painful thing]. [Product] helps [user type] achieve [goal] in [timeframe].'",
@@ -2069,7 +2084,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
     });
   } else if (data.description.length < 50) {
     findings.push({
-      id: fid(), priority: "important", category: "Product Clarity",
+      id: fid(), ruleKey: "api-description-brief", params: { description: data.description, descLen: data.description.length }, priority: "important", category: "Product Clarity",
       issue: "The product description is too brief to drive qualified clicks",
       whyItMatters: "A meta description under 50 characters cannot communicate context or value. Users scanning results cannot tell if this product is relevant to them.",
       suggestedFix: "Expand to 120–155 characters. Describe the user problem, the solution, and the audience. Lead with what changes for the user, not what the product does.",
@@ -2081,7 +2096,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (data.h1Tags.length === 0) {
     findings.push({
-      id: fid(), priority: "urgent", category: "Product Clarity",
+      id: fid(), ruleKey: "api-no-h1", priority: "urgent", category: "Product Clarity",
       issue: "There is no clear value statement anchoring the page",
       whyItMatters: "Without an H1, there is no primary message for users or search engines to anchor to. New visitors have no single statement to evaluate whether the product is for them.",
       suggestedFix: "Add one H1 that states the core user outcome — not the product feature. 'Finally, [outcome] without [pain]' is more powerful than '[Product] is the platform for [category]'.",
@@ -2091,7 +2106,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
     });
   } else if (data.h1Tags.length > 3) {
     findings.push({
-      id: fid(), priority: "important", category: "Product Clarity",
+      id: fid(), ruleKey: "api-competing-h1s", params: { h1Count: data.h1Tags.length, h1Samples: data.h1Tags.slice(0, 2).map(t => `"${t.slice(0, 40)}"`).join(", ") }, priority: "important", category: "Product Clarity",
       issue: `${data.h1Tags.length} competing headlines are diluting the core message`,
       whyItMatters: "Multiple H1s mean the product is trying to say too many things at once. Users cannot identify the single most important reason to keep reading.",
       suggestedFix: "Keep one H1 as the definitive statement of the product's value. Demote the rest to H2 or H3. The primary headline should be the last thing you cut.",
@@ -2103,7 +2118,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (data.wordCount < 80 && !skipMarketingChecks && !isOfficialSite) {
     findings.push({
-      id: fid(), priority: isAIBuilt ? "urgent" : "important", category: "Product Clarity",
+      id: fid(), ruleKey: "api-low-word-count", params: { wordCount: data.wordCount }, priority: isAIBuilt ? "urgent" : "important", category: "Product Clarity",
       issue: "Not enough product story on this page to build conviction",
       whyItMatters: "Fewer than 80 words cannot explain what the product does, who it is for, and why it matters. Users leave when they cannot answer these three questions quickly.",
       suggestedFix: "Add a clear product narrative: the problem, who has it, and how the product solves it. 200–300 words of well-structured copy outperforms any visual on a product page.",
@@ -2118,7 +2133,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (!skipConversionChecks && data.ctaElements.length === 0 && data.buttons.total === 0) {
     findings.push({
-      id: fid(), priority: "urgent", category: "Conversion",
+      id: fid(), ruleKey: "api-no-cta", priority: "urgent", category: "Conversion",
       issue: "There is no activation path on this page",
       whyItMatters: "A product page without a call to action is a dead end. Users arrive with intent, find no way to proceed, and leave. Conversion rate is zero until this is fixed.",
       suggestedFix: "Add one dominant action above the fold. It should describe the outcome, not the mechanic: 'Start building free', not 'Sign up'. Every other action on the page should be secondary to this one.",
@@ -2128,7 +2143,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
     });
   } else if (data.ctaElements.length === 0) {
     findings.push({
-      id: fid(), priority: "important", category: "Conversion",
+      id: fid(), ruleKey: "api-generic-buttons", params: { buttons: data.buttons.total }, priority: "important", category: "Conversion",
       issue: "Buttons exist but none communicate a reason to click",
       whyItMatters: "Generic button labels like 'Submit', 'Click here', or 'Learn more' don't give users a reason to act. They describe the mechanic, not the outcome.",
       suggestedFix: "Replace all generic button text with outcome-based copy: 'Get started free', 'See how it works', 'Start your first audit'. The user should know exactly what happens next.",
@@ -2140,7 +2155,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (!skipConversionChecks && !isOfficialSite && !data.signals.hasPricing) {
     findings.push({
-      id: fid(), priority: isAIBuilt ? "urgent" : "important", category: "Conversion",
+      id: fid(), ruleKey: "api-no-pricing", priority: isAIBuilt ? "urgent" : "important", category: "Conversion",
       issue: "Users cannot self-qualify without pricing visibility",
       whyItMatters: "B2B and SaaS buyers make purchase decisions on their own before ever talking to sales. Hiding pricing forces a sales call that up to 60% of qualified buyers will not book.",
       suggestedFix: "Add a pricing page or at minimum a starting price. If pricing is variable, show a floor ('Starting at $X') or a ROI statement ('Save 10+ hours per week'). Let buyers disqualify themselves.",
@@ -2152,7 +2167,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (!skipConversionChecks && !isOfficialSite && !data.signals.hasSignup) {
     findings.push({
-      id: fid(), priority: isAIBuilt ? "urgent" : "important", category: "Conversion",
+      id: fid(), ruleKey: "api-no-signup", priority: isAIBuilt ? "urgent" : "important", category: "Conversion",
       issue: "There is no self-service path from interest to activation",
       whyItMatters: "Users who are ready to try the product right now have nowhere to go. Requiring contact with sales adds a 24–72 hour delay to the activation moment — most users don't wait.",
       suggestedFix: "Add a self-service activation path: free trial, demo, sandbox, or waitlist. Show this option prominently. Reduce friction between 'I'm interested' and 'I'm using it'.",
@@ -2167,7 +2182,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (data.forms.total > 0 && data.ctaElements.length === 0) {
     findings.push({
-      id: fid(), priority: "important", category: "User Journey",
+      id: fid(), ruleKey: "api-form-no-context", params: { forms: data.forms.total }, priority: "important", category: "User Journey",
       issue: "Users reach a form with no clear reason to complete it",
       whyItMatters: "Forms without directional context have low completion rates. Users don't know why they're filling in fields or what they'll get in return. Ambiguity kills conversions.",
       suggestedFix: "Add a heading above each form that states the value of completing it: 'Get early access to [Product]' or 'Talk to someone in 24 hours'. The form should feel like a step toward something, not a gate.",
@@ -2179,7 +2194,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (data.links.total > 60) {
     findings.push({
-      id: fid(), priority: "later", category: "User Journey",
+      id: fid(), ruleKey: "api-link-overload", params: { links: data.links.total }, priority: "later", category: "User Journey",
       issue: "Navigation overload is fragmenting the user's attention",
       whyItMatters: "More than 60 links on a single page creates decision paralysis. Every extra link competes with the primary user goal. Users who can't decide what to click on, don't click anything.",
       suggestedFix: "Audit every link on the page. Remove or consolidate any link that does not directly serve the user's goal at this stage of their journey. Fewer options means more conversions.",
@@ -2194,7 +2209,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (!data.signals.hasContact && !skipMarketingChecks && !isOfficialSite) {
     findings.push({
-      id: fid(), priority: "important", category: "Trust Signals",
+      id: fid(), ruleKey: "api-no-contact", priority: "important", category: "Trust Signals",
       issue: "There is no visible way to reach the team behind this product",
       whyItMatters: "B2B buyers and first-time users look for a way to contact the team as a trust signal. Its absence suggests the company is either unreachable or unaccountable — both are conversion killers.",
       suggestedFix: "Add a contact link, support email, or live chat to the navigation or footer. Enterprise buyers specifically look for this before initiating any evaluation.",
@@ -2206,7 +2221,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (!data.signals.hasOgTags && !skipMarketingChecks) {
     findings.push({
-      id: fid(), priority: "later", category: "Trust Signals",
+      id: fid(), ruleKey: "api-no-og-tags", priority: "later", category: "Trust Signals",
       issue: "Every share of this product creates a broken first impression",
       whyItMatters: "When users share this page on LinkedIn, Slack, or in email, it renders as a plain URL with no image or description. The product looks unfinished before the recipient even visits.",
       suggestedFix: "Add og:title, og:description, and og:image to the page head. This takes 20 minutes and transforms every shared link into a controlled preview of the product.",
@@ -2220,7 +2235,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (data.images.missingAlt > 5) {
     findings.push({
-      id: fid(), priority: "urgent", category: "Accessibility",
+      id: fid(), ruleKey: "api-missing-alt-major", params: { missingAlt: data.images.missingAlt, totalImages: data.images.total }, priority: "urgent", category: "Accessibility",
       issue: `${data.images.missingAlt} of ${data.images.total} images are invisible to users relying on screen readers`,
       whyItMatters: "Screen readers skip images without alt text entirely. For visually impaired users, these images and any information they carry simply do not exist. This also fails WCAG AA standards.",
       suggestedFix: `Add descriptive alt text to all ${data.images.missingAlt} images. For content images: describe what the image shows in under 15 words. For decorative images: use alt="". Affected sources: ${data.images.missingAltSamples.slice(0, 2).join(", ")}`,
@@ -2230,7 +2245,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
     });
   } else if (data.images.missingAlt > 0) {
     findings.push({
-      id: fid(), priority: "important", category: "Accessibility",
+      id: fid(), ruleKey: "api-missing-alt-minor", params: { missingAlt: data.images.missingAlt, totalImages: data.images.total }, priority: "important", category: "Accessibility",
       issue: `${data.images.missingAlt} image${data.images.missingAlt > 1 ? "s are" : " is"} inaccessible to screen reader users`,
       whyItMatters: "Every image without alt text is a gap in the product experience for users who rely on assistive technology. It also reduces SEO value.",
       suggestedFix: "Add alt text to each affected image: describe the content or purpose in plain language. For purely decorative images, use alt=\"\".",
@@ -2244,7 +2259,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (!data.signals.hasMobileViewport) {
     findings.push({
-      id: fid(), priority: "urgent", category: "Mobile Experience",
+      id: fid(), ruleKey: "api-no-viewport", priority: "urgent", category: "Mobile Experience",
       issue: "The mobile experience is broken at the foundation",
       whyItMatters: "Without a viewport meta tag, the page renders as a miniaturised desktop layout on mobile. Text is unreadable, navigation is unusable, and CTAs are invisible. Mobile users immediately leave.",
       suggestedFix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1"> to the <head>. This single line enables responsive behaviour and is the prerequisite for every other mobile fix.',
@@ -2259,7 +2274,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (data.pageSize > 800_000) {
     findings.push({
-      id: fid(), priority: "urgent", category: "Performance Perception",
+      id: fid(), ruleKey: "api-page-heavy", params: { pageSizeKB: (data.pageSize / 1000).toFixed(0) }, priority: "urgent", category: "Performance Perception",
       issue: `Page weight is ${(data.pageSize / 1000).toFixed(0)}KB — users are waiting before seeing any value`,
       whyItMatters: "A page over 800KB takes 3–5 seconds to load on a typical mobile connection. 53% of mobile users abandon a page that takes more than 3 seconds. Users are forming a negative product impression before the page is even visible.",
       suggestedFix: "Audit page weight: compress and lazy-load images, remove unused CSS/JS, and defer non-critical scripts. Aim for under 300KB for the initial render. Each second of improvement is a measurable conversion gain.",
@@ -2269,7 +2284,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
     });
   } else if (data.pageSize > 400_000) {
     findings.push({
-      id: fid(), priority: "important", category: "Performance Perception",
+      id: fid(), ruleKey: "api-page-medium", params: { pageSizeKB: (data.pageSize / 1000).toFixed(0) }, priority: "important", category: "Performance Perception",
       issue: `Page weight of ${(data.pageSize / 1000).toFixed(0)}KB is creating noticeable load friction`,
       whyItMatters: "Pages over 400KB take 2+ seconds on mobile. This is below the threshold where users consciously notice the wait, but it measurably increases bounce rate and reduces first impressions.",
       suggestedFix: "Review page weight: compress images, minimise CSS/JS bundles, and lazy-load content below the fold. Target under 200KB for the initial viewport render.",
@@ -2281,7 +2296,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (data.scripts > 15) {
     findings.push({
-      id: fid(), priority: "important", category: "Performance Perception",
+      id: fid(), ruleKey: "api-too-many-scripts", params: { scripts: data.scripts }, priority: "important", category: "Performance Perception",
       issue: `${data.scripts} scripts are loading — the page feels heavier than it needs to`,
       whyItMatters: "Each additional script adds a network request and blocks rendering. More than 10 scripts typically means unused analytics, redundant chat widgets, or A/B testing tools that are no longer active. Users experience this as a slow product.",
       suggestedFix: "Audit every script. Remove tracking tools that are not actively used. Defer or lazy-load non-critical scripts. Consider consolidating third-party tools into a single tag manager.",
@@ -2295,7 +2310,7 @@ function generateFindingsFromAPIData(data: APIAuditData, url: string, context: S
 
   if (!data.signals.hasCanonical) {
     findings.push({
-      id: fid(), priority: "later", category: "Performance Perception",
+      id: fid(), ruleKey: "api-no-canonical", priority: "later", category: "Performance Perception",
       issue: "This page may be diluting its own search ranking",
       whyItMatters: "Without a canonical tag, search engines may index multiple versions of the same URL with different parameters. This splits SEO authority across duplicates rather than concentrating it on one page.",
       suggestedFix: 'Add <link rel="canonical" href="[page URL]"> to the <head> tag. This tells search engines which URL is the authoritative version.',
@@ -2463,6 +2478,9 @@ export default function AuditTool() {
   useEffect(() => { localStorage.setItem("audit-lang", lang); }, [lang]);
   const t = (key: string): string => TRANSLATIONS[lang]?.[key] ?? TRANSLATIONS.en[key] ?? key;
   const isRTL = lang === "he";
+  const lf = (f: AuditFinding) => localizeFindingFields(f, lang);
+  const catLabel = (c: Category) => localizeCategory(c, lang);
+  const priLabel = (p: Priority) => localizePriority(p, lang);
 
   // Demo iteration mode — simulated progress card
   const [demoOpen, setDemoOpen] = useState(false);
@@ -3425,6 +3443,11 @@ export default function AuditTool() {
     const sortedFindings = sortFindings(result.findings);
     const urgentCount = sortedFindings.filter((f) => f.priority === "urgent").length;
     const importantCount = sortedFindings.filter((f) => f.priority === "important").length;
+    const urgentFinding = sortedFindings.find((f) => f.priority === "urgent");
+    const quickWinFinding = sortedFindings.find((f) => f.effort === "Low" && f.impact === "High");
+    const riskFinding =
+      sortedFindings.find((f) => f.priority === "urgent" && (f.category === "Conversion" || f.category === "Product Clarity")) ??
+      urgentFinding;
     const fixPrompts = selectedFinding ? buildFixPrompts(selectedFinding, result.detectedBuilder) : null;
     const topCats = categoryOrder.slice(0, 3);
 
@@ -3538,9 +3561,9 @@ export default function AuditTool() {
           {/* Summary cards */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <SummaryCard label={t("overallScore")} value={`${result.overallScore}/100`} sub={`${urgentCount} urgent · ${importantCount} important`} accent="zinc" />
-            <SummaryCard label={t("topUrgentIssue")} value={urgentCount > 0 ? `${urgentCount} found` : "None"} sub={result.topUrgentIssue} accent="red" />
-            <SummaryCard label={t("bestQuickWin")} value="Low effort" sub={result.bestQuickWin} accent="green" />
-            <SummaryCard label={t("mainProductRisk")} value="Review" sub={result.mainProductRisk} accent="amber" />
+            <SummaryCard label={t("topUrgentIssue")} value={urgentCount > 0 ? `${urgentCount} found` : "None"} sub={urgentFinding ? lf(urgentFinding).issue : result.topUrgentIssue} accent="red" />
+            <SummaryCard label={t("bestQuickWin")} value="Low effort" sub={quickWinFinding ? lf(quickWinFinding).issue : result.bestQuickWin} accent="green" />
+            <SummaryCard label={t("mainProductRisk")} value="Review" sub={riskFinding ? lf(riskFinding).issue : result.mainProductRisk} accent="amber" />
           </div>
 
           {/* ── Page Snapshot ──────────────────────────────────────────────── */}
@@ -3825,28 +3848,28 @@ export default function AuditTool() {
                             <div className="mb-2 flex flex-wrap items-center gap-2">
                               <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase ${cfg.badge}`}>
                                 <span className={`h-1 w-1 rounded-full ${cfg.dot}`} />
-                                {cfg.label}
+                              {priLabel(f.priority)}
+                            </span>
+                            <span className="font-mono text-[10px] text-zinc-500">{catLabel(f.category)}</span>
+                            <span className={`inline-flex items-center rounded border px-2 py-0.5 font-mono text-[10px] font-semibold ${confBadge}`}>
+                              {conf.score}%{" "}
+                              <span className="ms-1 font-normal opacity-70">
+                                {conf.level === "high" ? t("confidenceHigh") : conf.level === "medium" ? t("confidenceMed") : t("confidenceLow")}
                               </span>
-                              <span className="font-mono text-[10px] text-zinc-500">{f.category}</span>
-                              <span className={`inline-flex items-center rounded border px-2 py-0.5 font-mono text-[10px] font-semibold ${confBadge}`}>
-                                {conf.score}%{" "}
-                                <span className="ml-1 font-normal opacity-70">
-                                  {conf.level === "high" ? "High" : conf.level === "medium" ? "Med" : "Low"}
-                                </span>
-                              </span>
-                            </div>
-                          );
-                        })()}
-                        <p className="mb-1.5 text-sm font-semibold text-zinc-900">{f.issue}</p>
-                        <p className="mb-3 text-xs text-zinc-500 leading-relaxed">{f.whyItMatters}</p>
-                        <div className="mb-3 rounded bg-white/80 border border-zinc-200 p-2.5">
-                          <p className="mb-1 font-mono text-[10px] font-semibold uppercase text-zinc-400">Fix</p>
-                          <p className="text-xs text-zinc-700">{f.suggestedFix}</p>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex gap-3">
-                            <span className="font-mono text-[10px] text-zinc-400">{t("effortLabel")} {f.effort}</span>
-                            <span className="font-mono text-[10px] text-zinc-400">{t("impactLabel")} {f.impact}</span>
+                            </span>
+                          </div>
+                        );
+                      })()}
+                      <p className="mb-1.5 text-sm font-semibold text-zinc-900">{lf(f).issue}</p>
+                      <p className="mb-3 text-xs text-zinc-500 leading-relaxed">{lf(f).whyItMatters}</p>
+                      <div className="mb-3 rounded bg-white/80 border border-zinc-200 p-2.5">
+                        <p className="mb-1 font-mono text-[10px] font-semibold uppercase text-zinc-400">{t("howToFix")}</p>
+                        <p className="text-xs text-zinc-700">{lf(f).suggestedFix}</p>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex gap-3">
+                          <span className="font-mono text-[10px] text-zinc-400">{t("effortLabel")} {localizeEffort(f.effort, lang)}</span>
+                          <span className="font-mono text-[10px] text-zinc-400">{t("impactLabel")} {localizeImpact(f.impact, lang)}</span>
                           </div>
                           <div className="flex gap-2">
                             <button
@@ -3870,7 +3893,7 @@ export default function AuditTool() {
                         <div className="flex flex-col gap-1.5">
                           <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[10px] font-semibold uppercase ${cfg.badge}`}>
                             <span className={`h-1 w-1 rounded-full ${cfg.dot}`} />
-                            {cfg.label}
+                            {priLabel(f.priority)}
                           </span>
                           {(() => {
                             const conf = calculateConfidence(f, apiData, isRealAudit);
@@ -3879,20 +3902,21 @@ export default function AuditTool() {
                               : conf.level === "medium"
                               ? "bg-sky-50 text-sky-700 border-sky-200"
                               : "bg-zinc-50 text-zinc-500 border-zinc-200";
+                            const confReason = lang === "he" ? localizeConfidenceReason(conf.level, lang) : conf.reason;
                             return (
-                              <span className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[10px] ${confBadge}`} title={conf.reason}>
+                              <span className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[10px] ${confBadge}`} title={confReason}>
                                 <span className="font-semibold">{conf.score}%</span>
-                                <span className="opacity-60">{conf.level === "high" ? "High" : conf.level === "medium" ? "Med" : "Low"}</span>
+                                <span className="opacity-60">{conf.level === "high" ? t("confidenceHigh") : conf.level === "medium" ? t("confidenceMed") : t("confidenceLow")}</span>
                               </span>
                             );
                           })()}
                         </div>
-                        <div className="font-mono text-xs text-zinc-600">{f.category}</div>
-                        <div className="text-xs font-semibold text-zinc-900">{f.issue}</div>
-                        <div className="text-xs leading-relaxed text-zinc-500">{f.whyItMatters}</div>
-                        <div className="text-xs leading-relaxed text-zinc-600">{f.suggestedFix}</div>
-                        <div><EffortBadge v={f.effort} /></div>
-                        <div><ImpactBadge v={f.impact} /></div>
+                        <div className="font-mono text-xs text-zinc-600">{catLabel(f.category)}</div>
+                        <div className="text-xs font-semibold text-zinc-900">{lf(f).issue}</div>
+                        <div className="text-xs leading-relaxed text-zinc-500">{lf(f).whyItMatters}</div>
+                        <div className="text-xs leading-relaxed text-zinc-600">{lf(f).suggestedFix}</div>
+                        <div><EffortBadge v={f.effort} lang={lang} /></div>
+                        <div><ImpactBadge v={f.impact} lang={lang} /></div>
                         <div className="flex flex-col gap-1.5">
                           <button
                             onClick={() => openDrawer(f)}
@@ -3938,10 +3962,10 @@ export default function AuditTool() {
               : ALL_TABS;
 
             return (
-              <div className={`flex h-[720px] overflow-hidden rounded-xl border border-zinc-200 shadow-sm${isRTL ? " flex-row-reverse" : ""}`}>
+              <div className="flex h-[720px] overflow-hidden rounded-xl border border-zinc-200 shadow-sm">
 
-                {/* ── LEFT PANEL — scrollable finding list ──────────────────── */}
-                <div className="flex w-[272px] shrink-0 flex-col overflow-hidden border-r border-zinc-200 bg-zinc-50">
+                {/* ── Findings list panel (right in RTL via dir=rtl on parent) ── */}
+                <div className="flex w-[272px] shrink-0 flex-col overflow-hidden border-e border-zinc-200 bg-zinc-50">
                   {/* Panel header */}
                   <div className="shrink-0 border-b border-zinc-200 bg-white px-3 py-2.5">
                     <p className="font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
@@ -3958,23 +3982,23 @@ export default function AuditTool() {
                         <button
                           key={f.id}
                           onClick={() => setInspectorFindingId(f.id)}
-                          className={`group w-full border-b border-zinc-200 px-3 py-3 text-left transition-colors ${
+                          className={`group w-full border-b border-zinc-200 px-3 py-3 text-start transition-colors ${
                             isSelected
-                              ? "border-l-[3px] border-l-blue-500 bg-white"
-                              : "border-l-[3px] border-l-transparent hover:border-l-zinc-300 hover:bg-white/60"
+                              ? "border-s-[3px] border-s-blue-500 bg-white"
+                              : "border-s-[3px] border-s-transparent hover:border-s-zinc-300 hover:bg-white/60"
                           }`}
                         >
                           {/* Top row: severity + category */}
                           <div className="mb-1.5 flex items-center gap-1.5 overflow-hidden">
                             <span className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-px font-mono text-[9px] font-semibold uppercase ${fcfg.badge}`}>
                               <span className={`h-1 w-1 rounded-full ${fcfg.dot}`} />
-                              {fcfg.label}
+                              {priLabel(f.priority)}
                             </span>
-                            <span className="truncate font-mono text-[9px] text-zinc-500">{f.category}</span>
+                            <span className="truncate font-mono text-[9px] text-zinc-500">{catLabel(f.category)}</span>
                           </div>
                           {/* Issue title */}
                           <p className={`mb-2 line-clamp-2 text-[12px] font-semibold leading-snug ${isSelected ? "text-zinc-900" : "text-zinc-700"}`}>
-                            {f.issue}
+                            {lf(f).issue}
                           </p>
                           {/* Bottom row: confidence + priority dot */}
                           <div className="flex items-center gap-2">
@@ -3982,10 +4006,10 @@ export default function AuditTool() {
                               fconf.level === "high" ? "text-emerald-600"
                               : fconf.level === "medium" ? "text-sky-600"
                               : "text-zinc-400"
-                            }`}>
+                            }`} dir="ltr">
                               {fconf.score}% conf
                             </span>
-                            <span className={`ml-auto h-2 w-2 shrink-0 rounded-full ${fcfg.dot}`} />
+                            <span className={`ms-auto h-2 w-2 shrink-0 rounded-full ${fcfg.dot}`} />
                           </div>
                         </button>
                       );
@@ -3993,22 +4017,22 @@ export default function AuditTool() {
                   </div>
                 </div>
 
-                {/* ── RIGHT PANEL — inspector detail ────────────────────────── */}
+                {/* ── Detail panel (left in RTL via dir=rtl on parent) ──────── */}
                 <div className="flex flex-1 flex-col overflow-hidden">
 
-                  {/* ── Screenshot area ───────────────────────────────────── */}
-                  <div className="shrink-0 bg-zinc-950" style={{ height: "370px" }}>
+                  {/* ── Screenshot area — LTR so screenshots are not mirrored ── */}
+                  <div className="shrink-0 bg-zinc-950" style={{ height: "370px" }} dir="ltr">
                     {/* Browser chrome + finding badge */}
                     <div className="flex items-center gap-1.5 px-3 pt-3 pb-2">
                       <span className="h-2 w-2 rounded-full bg-zinc-700" />
                       <span className="h-2 w-2 rounded-full bg-zinc-700" />
                       <span className="h-2 w-2 rounded-full bg-zinc-700" />
-                      <span className="ml-2 flex-1 truncate rounded bg-zinc-800 px-3 py-0.5 font-mono text-[9px] text-zinc-500">
+                      <span className="ms-2 flex-1 truncate rounded bg-zinc-800 px-3 py-0.5 font-mono text-[9px] text-zinc-500">
                         {url}
                       </span>
                       <span className={`shrink-0 inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[9px] font-semibold ${inspCfg.badge}`}>
                         <span className={`h-1 w-1 rounded-full ${inspCfg.dot}`} />
-                        {inspectorFinding.category}
+                        {catLabel(inspectorFinding.category)}
                       </span>
                     </div>
 
@@ -4070,19 +4094,19 @@ export default function AuditTool() {
                         <div className="mb-2 flex flex-wrap items-center gap-2">
                           <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] font-semibold ${inspCfg.badge}`}>
                             <span className={`h-1 w-1 rounded-full ${inspCfg.dot}`} />
-                            {inspCfg.label}
+                            {priLabel(inspectorFinding.priority)}
                           </span>
-                          <span className="font-mono text-[10px] text-zinc-500">{inspectorFinding.category}</span>
+                          <span className="font-mono text-[10px] text-zinc-500">{catLabel(inspectorFinding.category)}</span>
                           <span className={`rounded border px-1.5 py-px font-mono text-[9px] font-semibold ${
                             inspConf.level === "high" ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                             : inspConf.level === "medium" ? "border-sky-200 bg-sky-50 text-sky-700"
                             : "border-zinc-200 bg-zinc-50 text-zinc-500"
-                          }`}>
-                            {inspConf.score}% confidence
+                          }`} dir="ltr">
+                            {inspConf.score}% {lang === "he" ? "ביטחון" : "confidence"}
                           </span>
                         </div>
                         <h3 className="text-[15px] font-bold leading-snug text-zinc-900">
-                          {inspectorFinding.issue}
+                          {lf(inspectorFinding).issue}
                         </h3>
                       </div>
 
@@ -4092,7 +4116,7 @@ export default function AuditTool() {
                           {t("whyThisMatters").toUpperCase()}
                         </p>
                         <p className="text-[13px] leading-relaxed text-zinc-700">
-                          {inspectorFinding.whyItMatters}
+                          {lf(inspectorFinding).whyItMatters}
                         </p>
                       </div>
 
@@ -4102,16 +4126,16 @@ export default function AuditTool() {
                           {t("howToFix").toUpperCase()}
                         </p>
                         <p className="mb-3 text-[13px] leading-relaxed text-zinc-700">
-                          {inspectorFinding.suggestedFix}
+                          {lf(inspectorFinding).suggestedFix}
                         </p>
                         <div className="flex gap-4">
                           <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-zinc-500">
                             <span className="font-semibold text-zinc-700">{t("effortLabel")}</span>
-                            {inspectorFinding.effort}
+                            {localizeEffort(inspectorFinding.effort, lang)}
                           </span>
                           <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-zinc-500">
                             <span className="font-semibold text-zinc-700">{t("impactLabel")}</span>
-                            {inspectorFinding.impact}
+                            {localizeImpact(inspectorFinding.impact, lang)}
                           </span>
                         </div>
                       </div>
@@ -4519,7 +4543,9 @@ export default function AuditTool() {
 
         {/* ── Evidence Drawer ───────────────────────────────────────────────── */}
         {evidenceDrawerOpen && evidenceFinding && (() => {
-          const ev = buildFindingEvidence(evidenceFinding, apiData, url, isRealAudit);
+          const evRaw = buildFindingEvidence(evidenceFinding, apiData, url, isRealAudit);
+          const ev = localizeEvidence(evRaw, evidenceFinding.ruleKey, lang, evidenceFinding.params);
+          const evText = lf(evidenceFinding);
           const cfg = P_CONFIG[evidenceFinding.priority];
 
           const STATUS_ICON: Record<string, string> = {
@@ -4563,9 +4589,9 @@ export default function AuditTool() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] font-semibold ${cfg.badge}`}>
                         <span className={`h-1 w-1 rounded-full ${cfg.dot}`} />
-                        {cfg.label}
+                        {priLabel(evidenceFinding.priority)}
                       </span>
-                      <span className="font-mono text-[10px] text-zinc-400">{evidenceFinding.category}</span>
+                      <span className="font-mono text-[10px] text-zinc-400">{catLabel(evidenceFinding.category)}</span>
                       <span className={`rounded px-1.5 py-px font-mono text-[9px] font-semibold ${ev.dataSource === "real" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
                         {ev.dataSource === "real" ? "✓ Live data" : "⚠ Heuristic"}
                       </span>
@@ -4582,11 +4608,11 @@ export default function AuditTool() {
                   </div>
                   {/* Large prominent issue title */}
                   <h2 className="mb-2 text-xl font-bold leading-snug text-zinc-900">
-                    {evidenceFinding.issue}
+                    {evText.issue}
                   </h2>
                   {/* Explanation — immediately visible, no scroll needed */}
                   <p className="text-sm leading-relaxed text-zinc-600">
-                    {evidenceFinding.whyItMatters}
+                    {evText.whyItMatters}
                   </p>
                 </div>
 
@@ -4595,27 +4621,27 @@ export default function AuditTool() {
                   <div className="space-y-5 p-5">
 
                     {/* ── FOUND / EXPECTED / IMPACT reasoning layer ────────────── */}
-                    {(evidenceFinding.found || evidenceFinding.expected) && (
+                    {(evText.found || evText.expected) && (
                       <div>
                         <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
                           {t("whyThisFindingExists").toUpperCase()}
                         </p>
                         <div className="space-y-2">
-                          {evidenceFinding.found && (
+                          {evText.found && (
                             <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3.5">
                               <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-red-500">{t("foundLabel").toUpperCase()}</p>
-                              <p className="text-sm leading-relaxed text-zinc-800">{evidenceFinding.found}</p>
+                              <p className="text-sm leading-relaxed text-zinc-800" dir="ltr">{evText.found}</p>
                             </div>
                           )}
-                          {evidenceFinding.expected && (
+                          {evText.expected && (
                             <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3.5">
                               <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-emerald-600">{t("expectedLabel").toUpperCase()}</p>
-                              <p className="text-sm leading-relaxed text-zinc-700">{evidenceFinding.expected}</p>
+                              <p className="text-sm leading-relaxed text-zinc-700">{evText.expected}</p>
                             </div>
                           )}
                           <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3.5">
-                            <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-amber-600">Impact</p>
-                            <p className="text-sm leading-relaxed text-zinc-700">{evidenceFinding.whyItMatters}</p>
+                            <p className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-amber-600">{t("impactCardLabel").toUpperCase()}</p>
+                            <p className="text-sm leading-relaxed text-zinc-700">{evText.whyItMatters}</p>
                           </div>
                         </div>
                       </div>
@@ -4726,10 +4752,11 @@ export default function AuditTool() {
                         good: "text-green-600", warning: "text-amber-600", critical: "text-red-600", neutral: "text-zinc-400",
                       };
                       const levelColors = conf.level === "high"
-                        ? { bg: "bg-emerald-50", border: "border-emerald-200", badge: "bg-emerald-100 text-emerald-700 border-emerald-200", bar: "bg-emerald-500", label: "High confidence" }
+                        ? { bg: "bg-emerald-50", border: "border-emerald-200", badge: "bg-emerald-100 text-emerald-700 border-emerald-200", bar: "bg-emerald-500", label: t("confidenceHighLabel") }
                         : conf.level === "medium"
-                        ? { bg: "bg-sky-50", border: "border-sky-200", badge: "bg-sky-100 text-sky-700 border-sky-200", bar: "bg-sky-500", label: "Medium confidence" }
-                        : { bg: "bg-zinc-50", border: "border-zinc-200", badge: "bg-zinc-100 text-zinc-600 border-zinc-200", bar: "bg-zinc-400", label: "Low confidence" };
+                        ? { bg: "bg-sky-50", border: "border-sky-200", badge: "bg-sky-100 text-sky-700 border-sky-200", bar: "bg-sky-500", label: t("confidenceMedLabel") }
+                        : { bg: "bg-zinc-50", border: "border-zinc-200", badge: "bg-zinc-100 text-zinc-600 border-zinc-200", bar: "bg-zinc-400", label: t("confidenceLowLabel") };
+                      const confReason = lang === "he" ? localizeConfidenceReason(conf.level, lang) : conf.reason;
 
                       return (
                         <div>
@@ -4763,13 +4790,13 @@ export default function AuditTool() {
                                   <span className={`w-3 shrink-0 text-center font-mono text-xs font-bold ${CONF_STATUS_COLOR[s.status]}`}>
                                     {CONF_STATUS_ICON[s.status]}
                                   </span>
-                                  <span className="font-mono text-[11px] text-zinc-700">{s.label}</span>
+                                  <span className="font-mono text-[11px] text-zinc-700">{localizeConfidenceSignalLabel(s.label, lang)}</span>
                                 </div>
                               ))}
                             </div>
 
                             {/* Reason */}
-                            <p className="text-[11px] leading-relaxed text-zinc-500">{conf.reason}</p>
+                            <p className="text-[11px] leading-relaxed text-zinc-500">{confReason}</p>
                           </div>
                         </div>
                       );
@@ -4808,7 +4835,7 @@ export default function AuditTool() {
                               )}
                             </div>
                             {/* Value */}
-                            <div className={`shrink-0 max-w-[200px] rounded border px-2 py-0.5 font-mono text-[11px] ${STATUS_BG[sig.status]}`}>
+                            <div className={`shrink-0 max-w-[200px] rounded border px-2 py-0.5 font-mono text-[11px] ${STATUS_BG[sig.status]}`} dir="ltr">
                               <span className="break-all leading-relaxed">{sig.value}</span>
                             </div>
                           </div>
@@ -5246,12 +5273,12 @@ function SummaryCard({ label, value, sub, accent }: { label: string; value: stri
   );
 }
 
-function EffortBadge({ v }: { v: Effort }) {
+function EffortBadge({ v, lang = "en" }: { v: Effort; lang?: LangCode }) {
   const s = { Low: "text-green-700 bg-green-50 border-green-200", Medium: "text-amber-700 bg-amber-50 border-amber-200", High: "text-red-700 bg-red-50 border-red-200" }[v];
-  return <span className={`inline-block rounded border px-2 py-0.5 font-mono text-[10px] ${s}`}>{v}</span>;
+  return <span className={`inline-block rounded border px-2 py-0.5 font-mono text-[10px] ${s}`}>{localizeEffort(v, lang)}</span>;
 }
 
-function ImpactBadge({ v }: { v: Impact }) {
+function ImpactBadge({ v, lang = "en" }: { v: Impact; lang?: LangCode }) {
   const s = { High: "text-blue-700 bg-blue-50 border-blue-200", Medium: "text-zinc-700 bg-zinc-50 border-zinc-200", Low: "text-zinc-500 bg-white border-zinc-200" }[v];
-  return <span className={`inline-block rounded border px-2 py-0.5 font-mono text-[10px] ${s}`}>{v}</span>;
+  return <span className={`inline-block rounded border px-2 py-0.5 font-mono text-[10px] ${s}`}>{localizeImpact(v, lang)}</span>;
 }
